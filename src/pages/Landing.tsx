@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,13 +7,14 @@ import { Zap, Flame, Trophy, Users, Star, Play, ChevronRight } from "lucide-reac
 
 export default function Landing() {
   const [isSigningUp, setIsSigningUp] = useState(false);
+  const navigate = useNavigate();
 
   const handleGetStarted = () => {
-    setIsSigningUp(true);
-    // In real app, redirect to auth or onboarding
-    setTimeout(() => {
-      window.location.href = '/home';
-    }, 1000);
+    navigate('/register');
+  };
+
+  const handleLogin = () => {
+    navigate('/login');
   };
 
   return (
@@ -58,19 +60,16 @@ export default function Landing() {
             <Button 
               className="w-full btn-quest text-lg py-6"
               onClick={handleGetStarted}
-              disabled={isSigningUp}
             >
-              {isSigningUp ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
-                  Starting Your Adventure...
-                </>
-              ) : (
-                <>
-                  <Play className="w-5 h-5 mr-2" />
-                  Start Your Adventure
-                </>
-              )}
+              <Play className="w-5 h-5 mr-2" />
+              Start Your Adventure
+            </Button>
+            <Button 
+              variant="outline"
+              className="w-full text-lg py-6"
+              onClick={handleLogin}
+            >
+              Sign In
             </Button>
             <p className="text-xs text-muted-foreground">
               Free to play • No credit card required
@@ -247,13 +246,22 @@ export default function Landing() {
             </Card>
           </div>
 
-          <Button 
-            className="w-full btn-quest text-lg py-6"
-            onClick={handleGetStarted}
-          >
-            Start Your Free Adventure
-            <ChevronRight className="w-5 h-5 ml-2" />
-          </Button>
+          <div className="space-y-3">
+            <Button 
+              className="w-full btn-quest text-lg py-6"
+              onClick={handleGetStarted}
+            >
+              Start Your Free Adventure
+              <ChevronRight className="w-5 h-5 ml-2" />
+            </Button>
+            <Button 
+              variant="outline"
+              className="w-full text-lg py-6"
+              onClick={handleLogin}
+            >
+              Already have an account? Sign In
+            </Button>
+          </div>
         </div>
       </section>
 

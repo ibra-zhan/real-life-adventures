@@ -4,11 +4,18 @@ import { Button } from "@/components/ui/button";
 import { XPBar } from "@/components/ui/xp-bar";
 import { BadgeDisplay } from "@/components/ui/badge-display";
 import { Settings, Share2, Calendar, Award, Zap, Flame, Crown } from "lucide-react";
+import { useUser } from "@/contexts/UserContext";
+import { useAuthContext } from "@/contexts/AuthContext";
 import { mockUser } from "@/lib/mock-data";
 
 export default function Profile() {
-  const completedBadges = mockUser.badges.filter(b => b.unlockedAt);
-  const inProgressBadges = mockUser.badges.filter(b => !b.unlockedAt && b.progress);
+  const { state } = useUser();
+  const { user: authUser, isAuthenticated } = useAuthContext();
+  
+  // Use real user data if authenticated, otherwise fallback to mock
+  const user = isAuthenticated && authUser ? state.user : mockUser;
+  const completedBadges = user.badges.filter(b => b.unlockedAt);
+  const inProgressBadges = user.badges.filter(b => !b.unlockedAt && b.progress);
 
   return (
     <div className="min-h-screen bg-background pb-20">

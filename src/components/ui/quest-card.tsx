@@ -13,15 +13,15 @@ interface QuestCardProps {
 }
 
 const difficultyColors = {
-  easy: 'bg-difficulty-easy text-white',
-  medium: 'bg-difficulty-medium text-black',
-  hard: 'bg-difficulty-hard text-white',
-  epic: 'bg-difficulty-epic text-white'
+  EASY: 'bg-difficulty-easy text-white',
+  MEDIUM: 'bg-difficulty-medium text-black',
+  HARD: 'bg-difficulty-hard text-white',
+  EPIC: 'bg-difficulty-epic text-white'
 };
 
 export function QuestCard({ quest, onStart, className, variant = 'default' }: QuestCardProps) {
   const isDaily = variant === 'daily';
-  const isEpic = quest.difficulty === 'epic' || variant === 'epic';
+  const isEpic = quest.difficulty === 'EPIC' || variant === 'epic';
 
   return (
     <Card className={cn(

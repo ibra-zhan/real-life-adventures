@@ -1,8 +1,20 @@
 // SideQuest Core Data Models
 
-export type QuestDifficulty = 'easy' | 'medium' | 'hard' | 'epic';
-export type QuestStatus = 'available' | 'active' | 'completed' | 'expired';
-export type SubmissionType = 'photo' | 'video' | 'text' | 'checklist';
+// Media types
+export * from './media';
+
+// Notification types
+export * from './notification';
+
+// Moderation types
+export * from './moderation';
+
+// Gamification types
+export * from './gamification';
+
+export type QuestDifficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'EPIC';
+export type QuestStatus = 'AVAILABLE' | 'ACTIVE' | 'COMPLETED' | 'EXPIRED';
+export type SubmissionType = 'PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST';
 export type BadgeType = 'streak' | 'completion' | 'social' | 'special';
 
 export interface User {
@@ -25,25 +37,43 @@ export interface Quest {
   title: string;
   description: string;
   shortDescription: string;
+  instructions?: string | null;
+  categoryId: string;
   difficulty: QuestDifficulty;
+  tags: string | string[]; // Backend sends as JSON string, frontend expects array
+  requirements: string | string[]; // Backend sends as JSON string, frontend expects array
   points: number;
   estimatedTime: number; // minutes
-  category: string;
-  tags: string[];
-  requirements: string[];
-  submissionType: SubmissionType[];
+  submissionTypes: string | SubmissionType[]; // Backend sends as JSON string, frontend expects array
   status: QuestStatus;
+  isFeatured: boolean;
+  isEpic: boolean;
+  locationRequired: boolean;
+  locationType?: string | null;
+  specificLocation?: string | null;
+  allowSharing: boolean;
+  encourageSharing: boolean;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  createdBy?: string | null;
+  moderatedBy?: string | null;
+  moderatedAt?: string | null;
+  rejectionReason?: string | null;
+  completionCount: number;
+  averageRating?: number | null;
+  ratingCount: number;
   createdAt: string;
-  expiresAt?: string;
-  completedAt?: string;
-  location?: {
-    required: boolean;
-    type: 'indoor' | 'outdoor' | 'any';
+  updatedAt: string;
+  publishedAt?: string | null;
+  expiresAt?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    color: string;
   };
-  social?: {
-    allowSharing: boolean;
-    encourageSharing: boolean;
-  };
+  creator?: any;
 }
 
 export interface Submission {
