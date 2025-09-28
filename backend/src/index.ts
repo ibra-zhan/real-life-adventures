@@ -79,8 +79,7 @@ const startServer = async () => {
       console.log(`   • Users: ${stats.users}`);
       console.log(`   • Quests: ${stats.quests}`);
       console.log(`   • Submissions: ${stats.submissions}`);
-      console.log(`   • Badges: ${stats.badges}`);
-      console.log(`   • Challenges: ${stats.challenges}`);
+      console.log(`   • Categories: ${stats.categories}`);
       console.log('📋 Available Endpoints:');
       console.log(`   • Health Check: http://${config.server.host}:${config.server.port}/health`);
       console.log(`   • API Info: http://${config.server.host}:${config.server.port}/api`);

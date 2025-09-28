@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { apiClient, type LoginCredentials, type RegisterCredentials, type AuthResponse } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
+import type { AuthResponse, LoginCredentials, RegisterCredentials } from '@/lib/api-client';
 import type { User } from '@/types';
 
 interface AuthState {
@@ -16,6 +17,7 @@ interface AuthActions {
   logoutAll: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearError: () => void;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 export function useAuth(): AuthState & AuthActions {
@@ -32,9 +34,17 @@ export function useAuth(): AuthState & AuthActions {
       try {
         if (apiClient.isAuthenticated()) {
           const user = await apiClient.getProfile();
+          const persistedOnboarding = localStorage.getItem('onboardingCompleted');
+          const onboardingCompleted = user.onboardingCompleted ?? (persistedOnboarding === 'true');
+          const normalizedUser: User = {
+            ...user,
+            onboardingCompleted,
+          };
+
+          localStorage.setItem('onboardingCompleted', onboardingCompleted ? 'true' : 'false');
           setState(prev => ({
             ...prev,
-            user,
+            user: normalizedUser,
             isAuthenticated: true,
             isLoading: false,
           }));
@@ -61,9 +71,17 @@ export function useAuth(): AuthState & AuthActions {
     
     try {
       const response: AuthResponse = await apiClient.login(credentials);
+      const persistedOnboarding = localStorage.getItem('onboardingCompleted');
+      const onboardingCompleted = response.user.onboardingCompleted ?? (persistedOnboarding === 'true');
+      const normalizedUser: User = {
+        ...response.user,
+        onboardingCompleted,
+      };
+
+      localStorage.setItem('onboardingCompleted', onboardingCompleted ? 'true' : 'false');
       setState(prev => ({
         ...prev,
-        user: response.user,
+        user: normalizedUser,
         isAuthenticated: true,
         isLoading: false,
         error: null,
@@ -86,9 +104,16 @@ export function useAuth(): AuthState & AuthActions {
     
     try {
       const response: AuthResponse = await apiClient.register(credentials);
+      const onboardingCompleted = response.user.onboardingCompleted ?? false;
+      const normalizedUser: User = {
+        ...response.user,
+        onboardingCompleted,
+      };
+
+      localStorage.setItem('onboardingCompleted', onboardingCompleted ? 'true' : 'false');
       setState(prev => ({
         ...prev,
-        user: response.user,
+        user: normalizedUser,
         isAuthenticated: true,
         isLoading: false,
         error: null,
@@ -121,6 +146,7 @@ export function useAuth(): AuthState & AuthActions {
         isLoading: false,
         error: null,
       }));
+      localStorage.removeItem('onboardingCompleted');
     }
   }, []);
 
@@ -139,6 +165,7 @@ export function useAuth(): AuthState & AuthActions {
         isLoading: false,
         error: null,
       }));
+      localStorage.removeItem('onboardingCompleted');
     }
   }, []);
 
@@ -149,9 +176,16 @@ export function useAuth(): AuthState & AuthActions {
 
     try {
       const user = await apiClient.getProfile();
+      const persistedOnboarding = localStorage.getItem('onboardingCompleted');
+      const onboardingCompleted = user.onboardingCompleted ?? (persistedOnboarding === 'true');
+      const normalizedUser: User = {
+        ...user,
+        onboardingCompleted,
+      };
+      localStorage.setItem('onboardingCompleted', onboardingCompleted ? 'true' : 'false');
       setState(prev => ({
         ...prev,
-        user,
+        user: normalizedUser,
         isAuthenticated: true,
         error: null,
       }));
@@ -170,6 +204,28 @@ export function useAuth(): AuthState & AuthActions {
     setState(prev => ({ ...prev, error: null }));
   }, []);
 
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setState(prev => {
+      if (!prev.user) {
+        return prev;
+      }
+
+      const nextUser = {
+        ...prev.user,
+        ...updates,
+      };
+
+      if (updates.onboardingCompleted !== undefined) {
+        localStorage.setItem('onboardingCompleted', updates.onboardingCompleted ? 'true' : 'false');
+      }
+
+      return {
+        ...prev,
+        user: nextUser,
+      };
+    });
+  }, []);
+
   return {
     ...state,
     login,
@@ -178,5 +234,6 @@ export function useAuth(): AuthState & AuthActions {
     logoutAll,
     refreshUser,
     clearError,
+    updateUser,
   };
 }

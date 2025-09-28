@@ -1,4 +1,4 @@
-import { Quest, Challenge, User, Badge, Submission, LeaderboardEntry } from '../types/index';
+import { Quest, User, Submission } from '../types/index';
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
@@ -29,16 +29,10 @@ interface PaginationParams {
 
 interface QuestFilters {
   category?: string;
-  difficulty?: 'EASY' | 'MEDIUM' | 'HARD' | 'EPIC';
-  tags?: string;
+  difficulty?: string;
+  status?: string;
   featured?: boolean;
-  active?: boolean;
-}
-
-// Authentication types
-interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
+  search?: string;
 }
 
 interface LoginCredentials {
@@ -56,148 +50,111 @@ interface RegisterCredentials {
 
 interface AuthResponse {
   user: User;
-  tokens: AuthTokens;
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+  };
+}
+
+interface UserProfile {
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  bio?: string;
+  location?: string;
+  avatar?: string;
+}
+
+interface UserPreferences {
+  emailNotifications?: boolean;
+  pushNotifications?: boolean;
+  profileVisibility?: string;
+  preferredCategories?: string[];
+  preferredDifficulty?: string[];
+  defaultPrivacy?: 'public' | 'friends' | 'private';
+  onboardingCompleted?: boolean;
 }
 
 class ApiClient {
-  private baseUrl: string;
+  private baseURL: string;
   private accessToken: string | null = null;
-  private refreshToken: string | null = null;
-  private refreshPromise: Promise<AuthTokens> | null = null;
 
-  constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl;
-    this.loadTokensFromStorage();
+  constructor(baseURL: string = API_BASE_URL) {
+    this.baseURL = baseURL;
+    this.loadToken();
   }
 
-  // Token management
-  private loadTokensFromStorage() {
-    try {
-      const storedTokens = localStorage.getItem('auth_tokens');
-      if (storedTokens) {
-        const tokens = JSON.parse(storedTokens);
-        this.accessToken = tokens.accessToken;
-        this.refreshToken = tokens.refreshToken;
+  private loadToken(): void {
+    this.accessToken = localStorage.getItem('accessToken');
+    // Also check if token exists but might be expired
+    if (this.accessToken) {
+      try {
+        // Simple JWT expiry check without full validation
+        const payload = JSON.parse(atob(this.accessToken.split('.')[1]));
+        const currentTime = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < currentTime) {
+          console.log('Access token is expired, will refresh on next request');
+          // Don't clear the token here, let the request handling deal with it
+        }
+      } catch (error) {
+        console.warn('Invalid access token format:', error);
+        this.accessToken = null;
+        localStorage.removeItem('accessToken');
       }
-    } catch (error) {
-      console.warn('Failed to load tokens from storage:', error);
-      this.clearTokens();
     }
   }
 
-  private saveTokensToStorage(tokens: AuthTokens) {
-    try {
-      localStorage.setItem('auth_tokens', JSON.stringify(tokens));
-      this.accessToken = tokens.accessToken;
-      this.refreshToken = tokens.refreshToken;
-    } catch (error) {
-      console.warn('Failed to save tokens to storage:', error);
-    }
-  }
-
-  private clearTokens() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    localStorage.removeItem('auth_tokens');
-  }
-
-  private async refreshAccessToken(): Promise<AuthTokens> {
-    if (this.refreshPromise) {
-      return this.refreshPromise;
-    }
-
-    if (!this.refreshToken) {
-      throw new Error('No refresh token available');
-    }
-
-    this.refreshPromise = this.request<AuthTokens>('/auth/refresh-token', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken: this.refreshToken }),
-    }).then(response => {
-      this.refreshPromise = null;
-      if (response.success) {
-        this.saveTokensToStorage(response.data);
-        return response.data;
-      } else {
-        this.clearTokens();
-        throw new Error(response.error?.message || 'Token refresh failed');
-      }
-    }).catch(error => {
-      this.refreshPromise = null;
-      this.clearTokens();
-      throw error;
-    });
-
-    return this.refreshPromise;
+  isAuthenticated(): boolean {
+    return !!this.accessToken;
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount: number = 0
   ): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${endpoint}`;
-    
+    const url = `${this.baseURL}${endpoint}`;
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (this.accessToken) {
+      headers.Authorization = `Bearer ${this.accessToken}`;
+    }
+
     const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.accessToken && { Authorization: `Bearer ${this.accessToken}` }),
-        ...options.headers,
-      },
       ...options,
+      headers,
     };
 
     try {
       const response = await fetch(url, config);
-      
-      // Handle 401 Unauthorized - try to refresh token
-      if (response.status === 401 && this.refreshToken && !endpoint.includes('/auth/refresh-token')) {
-        try {
-          await this.refreshAccessToken();
-          // Retry the request with new token
-          const retryConfig = {
-            ...config,
-            headers: {
-              ...config.headers,
-              Authorization: `Bearer ${this.accessToken}`,
-            },
-          };
-          const retryResponse = await fetch(url, retryConfig);
-          
-          if (!retryResponse.ok) {
-            const errorData = await retryResponse.json().catch(() => ({ 
-              success: false, 
-              error: { 
-                message: `HTTP ${retryResponse.status}: ${retryResponse.statusText}`,
-                code: 'HTTP_ERROR' 
-              } 
-            }));
-            throw new Error(errorData.error?.message || `Request failed with status ${retryResponse.status}`);
-          }
-
-          const data = await retryResponse.json();
-          return data;
-        } catch (refreshError) {
-          // Refresh failed, clear tokens and throw original error
-          this.clearTokens();
-          throw new Error('Authentication failed. Please log in again.');
-        }
-      }
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ 
-          success: false, 
-          error: { 
-            message: `HTTP ${response.status}: ${response.statusText}`,
-            code: 'HTTP_ERROR' 
-          } 
-        }));
-        throw new Error(errorData.error?.message || `Request failed with status ${response.status}`);
-      }
-
       const data = await response.json();
+
+      if (!response.ok) {
+        // If we get a 401 and have a refresh token, try to refresh the access token
+        if (response.status === 401 && retryCount === 0 && localStorage.getItem('refreshToken')) {
+          try {
+            await this.refreshToken();
+            // Retry the request with the new token
+            return this.request(endpoint, options, retryCount + 1);
+          } catch (refreshError) {
+            // If refresh fails, clear tokens and throw original error
+            this.accessToken = null;
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            throw new Error(data.error?.message || `HTTP ${response.status}`);
+          }
+        }
+
+        throw new Error(data.error?.message || `HTTP ${response.status}`);
+      }
+
       return data;
     } catch (error) {
-      console.error(`API request failed: ${endpoint}`, error);
+      console.error('API request failed:', error);
       throw error;
     }
   }
@@ -206,65 +163,106 @@ class ApiClient {
     const searchParams = new URLSearchParams();
     
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        searchParams.append(key, String(value));
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, value.toString());
       }
     });
-    
+
     const queryString = searchParams.toString();
     return queryString ? `?${queryString}` : '';
   }
 
-  // Authentication methods
+  // Auth endpoints
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await this.request<AuthResponse>('/auth/login', {
+    const response = await this.request<{
+      user: User;
+      tokens: { accessToken: string; refreshToken: string };
+    }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    
+
     if (response.success) {
-      this.saveTokensToStorage(response.data.tokens);
+      this.accessToken = response.data.tokens.accessToken;
+      localStorage.setItem('accessToken', response.data.tokens.accessToken);
+      localStorage.setItem('refreshToken', response.data.tokens.refreshToken);
     }
-    
-    return response.data;
+
+    return {
+      user: response.data.user,
+      tokens: response.data.tokens
+    };
   }
 
   async register(credentials: RegisterCredentials): Promise<AuthResponse> {
-    const response = await this.request<AuthResponse>('/auth/register', {
+    const response = await this.request<{
+      user: User;
+      tokens: { accessToken: string; refreshToken: string };
+    }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    
+
     if (response.success) {
-      this.saveTokensToStorage(response.data.tokens);
+      this.accessToken = response.data.tokens.accessToken;
+      localStorage.setItem('accessToken', response.data.tokens.accessToken);
+      localStorage.setItem('refreshToken', response.data.tokens.refreshToken);
     }
-    
-    return response.data;
+
+    return {
+      user: response.data.user,
+      tokens: response.data.tokens
+    };
   }
 
-  async logout(): Promise<void> {
-    if (this.refreshToken) {
-      try {
-        await this.request('/auth/logout', {
-          method: 'POST',
-          body: JSON.stringify({ refreshToken: this.refreshToken }),
-        });
-      } catch (error) {
-        console.warn('Logout request failed:', error);
-      }
-    }
-    this.clearTokens();
-  }
-
-  async logoutAll(): Promise<void> {
+  async logout(): Promise<ApiResponse<void>> {
     try {
-      await this.request('/auth/logout-all', {
-        method: 'POST',
-      });
-    } catch (error) {
-      console.warn('Logout all request failed:', error);
+      await this.request<void>('/auth/logout', { method: 'POST' });
+    } finally {
+      this.accessToken = null;
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
     }
-    this.clearTokens();
+
+    return { success: true, data: undefined as any, timestamp: new Date().toISOString() };
+  }
+
+  async logoutAll(): Promise<ApiResponse<void>> {
+    try {
+      await this.request<void>('/auth/logout-all', { method: 'POST' });
+    } finally {
+      this.accessToken = null;
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+    }
+
+    return { success: true, data: undefined as any, timestamp: new Date().toISOString() };
+  }
+
+  async refreshToken(): Promise<ApiResponse<{ accessToken: string }>> {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const response = await this.request<{
+      tokens: { accessToken: string; refreshToken: string };
+    }>('/auth/refresh-token', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (response.success) {
+      this.accessToken = response.data.tokens.accessToken;
+      localStorage.setItem('accessToken', response.data.tokens.accessToken);
+      localStorage.setItem('refreshToken', response.data.tokens.refreshToken);
+    }
+
+    return {
+      success: response.success,
+      data: { accessToken: response.data.tokens.accessToken },
+      timestamp: response.timestamp
+    };
   }
 
   async getProfile(): Promise<User> {
@@ -272,232 +270,70 @@ class ApiClient {
     return response.data;
   }
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    const response = await this.request<{ message: string }>('/auth/forgot-password', {
+  // Email verification endpoints
+  async verifyEmail(token: string): Promise<ApiResponse<void>> {
+    return this.request<void>('/auth/verify-email', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ token }),
     });
-    return response.data;
   }
 
-  async resetPassword(token: string, password: string): Promise<{ message: string }> {
-    const response = await this.request<{ message: string }>('/auth/reset-password', {
+  async verifyEmailWithCode(code: string): Promise<ApiResponse<void>> {
+    return this.request<void>('/auth/verify-email-code', {
       method: 'POST',
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ code }),
     });
-    return response.data;
   }
 
-  // Utility methods
-  isAuthenticated(): boolean {
-    return !!this.accessToken;
+  async resendVerificationEmail(): Promise<ApiResponse<void>> {
+    return this.request<void>('/auth/resend-verification', {
+      method: 'POST',
+    });
   }
 
-  getAccessToken(): string | null {
-    return this.accessToken;
+  // User endpoints
+  async updateProfile(profileData: UserProfile): Promise<ApiResponse<User>> {
+    return this.request<User>('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    });
+  }
+
+  async updatePreferences(preferences: UserPreferences): Promise<ApiResponse<any>> {
+    return this.request('/users/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+    });
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<void>> {
+    return this.request<void>('/users/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  async deleteAccount(): Promise<ApiResponse<void>> {
+    return this.request<void>('/users/account', { method: 'DELETE' });
   }
 
   // Quest endpoints
   async getQuests(
-    filters: QuestFilters & PaginationParams = {}
+    filters: QuestFilters = {},
+    pagination: PaginationParams = {}
   ): Promise<ApiResponse<Quest[]>> {
-    try {
-      const queryString = this.buildQueryString(filters);
-      return await this.request<Quest[]>(`/quests${queryString}`);
-    } catch (error) {
-      console.warn('API not available, using fallback data:', error);
-      // Fallback to local mock data if API is not available
-      const mockQuests = [
-        {
-          id: "quest-kindness-coffee",
-          title: "Coffee Shop Compliment",
-          shortDescription: "Brighten a barista's day with a genuine compliment",
-          description: "Visit a local coffee shop and genuinely compliment the barista on something specific (their latte art, service, etc.). Take a photo of your drink as proof.",
-          category: "Kindness",
-          difficulty: "EASY" as const,
-          requirements: ["Visit a coffee shop", "Give a genuine compliment", "Take a photo of your drink"],
-          estimatedTime: 15,
-          points: 100,
-          tags: ["social", "kindness", "local"],
-          isFeatured: true,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        },
-        {
-          id: "quest-fitness-stairs",
-          title: "Stair Master",
-          shortDescription: "Take the stairs instead of elevators today",
-          description: "For one full day, choose stairs over elevators whenever possible. Track how many flights you climbed!",
-          category: "Fitness",
-          difficulty: "EASY" as const,
-          requirements: ["Choose stairs over elevators", "Count flights climbed", "Complete for one full day"],
-          estimatedTime: 0,
-          points: 75,
-          tags: ["fitness", "daily", "simple"],
-          isFeatured: false,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        }
-      ];
-      
-      return {
-        success: true,
-        data: mockQuests as Quest[],
-        timestamp: new Date().toISOString()
-      };
-    }
+    const params = { ...filters, ...pagination };
+    const queryString = this.buildQueryString(params);
+    return this.request<Quest[]>(`/quests${queryString}`);
   }
+
+  async getFeaturedQuests(): Promise<ApiResponse<Quest[]>> {
+    return this.request<Quest[]>('/quests/featured');
+  }
+
 
   async getQuest(id: string): Promise<ApiResponse<Quest>> {
-    try {
-      return await this.request<Quest>(`/quests/${id}`);
-    } catch (error) {
-      console.warn('API not available, using fallback data for quest:', id, error);
-      
-      // Create mock quest data based on the requested ID
-      const mockQuests = {
-        "quest-kindness-coffee": {
-          id: "quest-kindness-coffee",
-          title: "Coffee Shop Compliment",
-          shortDescription: "Brighten a barista's day with a genuine compliment",
-          description: "Visit a local coffee shop and genuinely compliment the barista on something specific (their latte art, service, etc.). Take a photo of your drink as proof.",
-          category: "Kindness",
-          difficulty: "EASY" as const,
-          requirements: ["Visit a coffee shop", "Give a genuine compliment", "Take a photo of your drink"],
-          estimatedTime: 15,
-          points: 100,
-          tags: ["social", "kindness", "local"],
-          isFeatured: true,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        },
-        "quest-fitness-stairs": {
-          id: "quest-fitness-stairs",
-          title: "Stair Master",
-          shortDescription: "Take the stairs instead of elevators today",
-          description: "For one full day, choose stairs over elevators whenever possible. Track how many flights you climbed!",
-          category: "Fitness",
-          difficulty: "EASY" as const,
-          requirements: ["Choose stairs over elevators", "Count flights climbed", "Complete for one full day"],
-          estimatedTime: 0,
-          points: 75,
-          tags: ["fitness", "daily", "simple"],
-          isFeatured: false,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        }
-      };
-      
-      const mockQuest = mockQuests[id as keyof typeof mockQuests];
-      
-      if (mockQuest) {
-        return {
-          success: true,
-          data: mockQuest as Quest,
-          timestamp: new Date().toISOString()
-        };
-      }
-      
-      // If quest ID not found in mock data, throw error
-      throw new Error(`Quest ${id} not found`);
-    }
-  }
-
-  async getFeaturedQuest(): Promise<ApiResponse<Quest>> {
-    try {
-      return await this.request<Quest>('/quests/featured');
-    } catch (error) {
-      console.warn('API not available, using fallback data:', error);
-      // Fallback to local mock data if API is not available
-      const mockFeaturedQuest = {
-        id: "quest-kindness-coffee",
-        title: "Coffee Shop Compliment",
-        shortDescription: "Brighten a barista's day with a genuine compliment",
-        description: "Visit a local coffee shop and genuinely compliment the barista on something specific (their latte art, service, etc.). Take a photo of your drink as proof.",
-        category: "Kindness",
-        difficulty: "EASY" as const,
-        requirements: ["Visit a coffee shop", "Give a genuine compliment", "Take a photo of your drink"],
-        estimatedTime: 15,
-        points: 100,
-        tags: ["social", "kindness", "local"],
-        isFeatured: true,
-        isEpic: false,
-        imageUrl: null,
-        locationRequired: false,
-        allowSharing: true
-      };
-      
-      return {
-        success: true,
-        data: mockFeaturedQuest as Quest,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  async getRandomQuest(): Promise<ApiResponse<Quest>> {
-    try {
-      return await this.request<Quest>('/quests/random');
-    } catch (error) {
-      console.warn('API not available, using fallback data for random quest:', error);
-      
-      // Return random quest from mock data
-      const mockQuests = [
-        {
-          id: "quest-kindness-coffee",
-          title: "Coffee Shop Compliment",
-          shortDescription: "Brighten a barista's day with a genuine compliment",
-          description: "Visit a local coffee shop and genuinely compliment the barista on something specific (their latte art, service, etc.). Take a photo of your drink as proof.",
-          category: "Kindness",
-          difficulty: "EASY" as const,
-          requirements: ["Visit a coffee shop", "Give a genuine compliment", "Take a photo of your drink"],
-          estimatedTime: 15,
-          points: 100,
-          tags: ["social", "kindness", "local"],
-          isFeatured: true,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        },
-        {
-          id: "quest-fitness-stairs",
-          title: "Stair Master",
-          shortDescription: "Take the stairs instead of elevators today",
-          description: "For one full day, choose stairs over elevators whenever possible. Track how many flights you climbed!",
-          category: "Fitness",
-          difficulty: "EASY" as const,
-          requirements: ["Choose stairs over elevators", "Count flights climbed", "Complete for one full day"],
-          estimatedTime: 0,
-          points: 75,
-          tags: ["fitness", "daily", "simple"],
-          isFeatured: false,
-          isEpic: false,
-          imageUrl: null,
-          locationRequired: false,
-          allowSharing: true
-        }
-      ];
-      
-      const randomIndex = Math.floor(Math.random() * mockQuests.length);
-      return {
-        success: true,
-        data: mockQuests[randomIndex] as Quest,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
-  async getQuestCategories(): Promise<ApiResponse<any[]>> {
-    return this.request<any[]>('/quests/categories/all');
+    return this.request<Quest>(`/quests/${id}`);
   }
 
   async createQuest(questData: Partial<Quest>): Promise<ApiResponse<Quest>> {
@@ -515,264 +351,35 @@ class ApiClient {
   }
 
   async deleteQuest(id: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/quests/${id}`, {
-      method: 'DELETE',
-    });
+    return this.request<void>(`/quests/${id}`, { method: 'DELETE' });
   }
 
-  // User endpoints
-  async getUser(id: string): Promise<ApiResponse<User>> {
-    return this.request<User>(`/users/${id}`);
-  }
-
-  async createUser(userData: Partial<User>): Promise<ApiResponse<User>> {
-    return this.request<User>('/users', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
-  }
-
-  async updateUser(id: string, userData: Partial<User>): Promise<ApiResponse<User>> {
-    return this.request<User>(`/users/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    });
-  }
-
-  // Challenge endpoints
-  async getChallenges(
-    pagination: PaginationParams = {}
-  ): Promise<ApiResponse<Challenge[]>> {
-    const queryString = this.buildQueryString(pagination);
-    return this.request<Challenge[]>(`/challenges${queryString}`);
-  }
-
-  async getChallenge(id: string): Promise<ApiResponse<Challenge>> {
-    return this.request<Challenge>(`/challenges/${id}`);
-  }
-
-  async createChallenge(challengeData: Partial<Challenge>): Promise<ApiResponse<Challenge>> {
-    return this.request<Challenge>('/challenges', {
-      method: 'POST',
-      body: JSON.stringify(challengeData),
-    });
-  }
-
-  async joinChallenge(challengeId: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/challenges/${challengeId}/join`, {
-      method: 'POST',
-    });
-  }
-
-  // Submission endpoints
-  async getSubmissions(
-    pagination: PaginationParams = {}
-  ): Promise<ApiResponse<Submission[]>> {
-    const queryString = this.buildQueryString(pagination);
-    return this.request<Submission[]>(`/submissions${queryString}`);
-  }
-
-  async createSubmission(submissionData: Partial<Submission>): Promise<ApiResponse<Submission>> {
-    return this.request<Submission>('/submissions', {
-      method: 'POST',
-      body: JSON.stringify(submissionData),
-    });
-  }
-
-  async updateSubmission(id: string, submissionData: Partial<Submission>): Promise<ApiResponse<Submission>> {
-    return this.request<Submission>(`/submissions/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(submissionData),
-    });
-  }
-
-  // Badge endpoints
-  async getBadges(): Promise<ApiResponse<Badge[]>> {
-    return this.request<Badge[]>('/badges');
-  }
-
-  async getBadge(id: number): Promise<ApiResponse<Badge>> {
-    return this.request<Badge>(`/badges/${id}`);
-  }
-
-  // Leaderboard endpoints
-  async getLeaderboard(
-    pagination: PaginationParams = {}
-  ): Promise<ApiResponse<LeaderboardEntry[]>> {
-    const queryString = this.buildQueryString(pagination);
-    return this.request<LeaderboardEntry[]>(`/leaderboard${queryString}`);
-  }
-
-  // Gamification endpoints
-  async getGamificationHealth(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/health');
-  }
-
-  async getGamificationStats(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/stats');
-  }
-
-  async getUserLevel(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/user/level');
-  }
-
-  async getLevelProgress(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/user/level-progress');
-  }
-
-  async getLevelConfig(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/level-config');
-  }
-
-  async getAllLevelConfigs(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/level-configs');
-  }
-
-  async getUserBadges(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/user/badges');
-  }
-
-  async getBadgeProgress(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/user/badge-progress');
-  }
-
-  async getAllBadges(): Promise<ApiResponse<any>> {
-    return this.request('/gamification/badges');
-  }
-
-  async getBadgesByType(type: string): Promise<ApiResponse<any>> {
-    return this.request(`/gamification/badges/type/${type}`);
-  }
-
-  async getBadgesByRarity(rarity: string): Promise<ApiResponse<any>> {
-    return this.request(`/gamification/badges/rarity/${rarity}`);
-  }
-
-  async addXP(amount: number, source: string): Promise<ApiResponse<any>> {
-    return this.request('/gamification/xp/add', {
-      method: 'POST',
-      body: JSON.stringify({ amount, source }),
-    });
-  }
-
-  async awardBadge(badgeId: string): Promise<ApiResponse<any>> {
-    return this.request('/gamification/badges/award', {
-      method: 'POST',
-      body: JSON.stringify({ badgeId }),
-    });
-  }
-
-  // Media endpoints
-  async getMediaFiles(filters?: any): Promise<ApiResponse<any>> {
-    const queryString = this.buildQueryString(filters || {});
-    return this.request(`/media${queryString}`);
-  }
-
-  async getMediaStats(): Promise<ApiResponse<any>> {
-    return this.request('/media/stats');
-  }
-
-  async getMediaHealth(): Promise<ApiResponse<any>> {
-    return this.request('/media/health');
-  }
-
-  // Notification endpoints
-  async getNotifications(filters?: any): Promise<ApiResponse<any>> {
-    const queryString = this.buildQueryString(filters || {});
-    return this.request(`/notifications${queryString}`);
-  }
-
-  async markNotificationAsRead(notificationId: string): Promise<ApiResponse<any>> {
-    return this.request(`/notifications/${notificationId}/read`, {
-      method: 'PUT',
-    });
-  }
-
-  async markAllNotificationsAsRead(): Promise<ApiResponse<any>> {
-    return this.request('/notifications/read-all', {
-      method: 'PUT',
-    });
-  }
-
-  async getNotificationSettings(): Promise<ApiResponse<any>> {
-    return this.request('/notifications/settings');
-  }
-
-  async updateNotificationSettings(settings: any): Promise<ApiResponse<any>> {
-    return this.request('/notifications/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-  }
-
-  // Moderation endpoints
-  async getModerationHealth(): Promise<ApiResponse<any>> {
-    return this.request('/moderation/health');
-  }
-
-  async getModerationStats(): Promise<ApiResponse<any>> {
-    return this.request('/moderation/stats');
-  }
-
-  async moderateContent(content: any): Promise<ApiResponse<any>> {
-    return this.request('/moderation/moderate', {
-      method: 'POST',
-      body: JSON.stringify(content),
-    });
-  }
-
-  async getModerationQueue(filters?: any): Promise<ApiResponse<any>> {
-    const queryString = this.buildQueryString(filters || {});
-    return this.request(`/moderation/queue${queryString}`);
-  }
-
-  async approveContent(contentId: string): Promise<ApiResponse<any>> {
-    return this.request(`/moderation/queue/${contentId}/approve`, {
-      method: 'PUT',
-    });
-  }
-
-  async rejectContent(contentId: string, reason: string): Promise<ApiResponse<any>> {
-    return this.request(`/moderation/queue/${contentId}/reject`, {
-      method: 'PUT',
-      body: JSON.stringify({ reason }),
-    });
-  }
-
-  // AI Quest Generation endpoints
-  async generateQuest(params: {
-    categoryId?: string;
-    difficulty?: 'EASY' | 'MEDIUM' | 'HARD' | 'EPIC';
+  // AI Quest endpoints
+  async generateQuest(generationData: {
+    mode: 'quick' | 'custom';
+    difficulty: 'easy' | 'medium' | 'hard' | 'epic';
+    category?: 'fitness' | 'learning';
     count?: number;
-    location?: {
-      latitude: number;
-      longitude: number;
-      city?: string;
-      country?: string;
-    };
-    weather?: {
-      temperature: number;
-      condition: string;
-      season: string;
-    };
-    timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night';
-    preferences?: {
-      interests?: string[];
-      preferredDifficulties?: ('EASY' | 'MEDIUM' | 'HARD' | 'EPIC')[];
-      preferredCategories?: string[];
-    };
-  }): Promise<ApiResponse<any>> {
-    return this.request('/ai-quests/generate', {
+  }): Promise<ApiResponse<any[]>> {
+    return this.request<any[]>('/ai-quests/generate', {
       method: 'POST',
-      body: JSON.stringify(params),
+      body: JSON.stringify(generationData),
     });
   }
 
-  async saveGeneratedQuest(questData: any, autoPublish: boolean = false): Promise<ApiResponse<any>> {
-    return this.request('/ai-quests/save', {
+  async saveGeneratedQuest(questData: any, autoPublish: boolean = false): Promise<ApiResponse<Quest>> {
+    return this.request<Quest>('/ai-quests/save', {
       method: 'POST',
       body: JSON.stringify({ questData, autoPublish }),
     });
+  }
+
+  async getGenerationStats(): Promise<ApiResponse<any>> {
+    return this.request<any>('/ai-quests/stats');
+  }
+
+  async getPersonalizedSuggestions(): Promise<ApiResponse<any>> {
+    return this.request<any>('/ai-quests/suggestions');
   }
 
   async generateQuestFromIdea(idea: {
@@ -783,42 +390,186 @@ class ApiClient {
     includeLocation?: boolean;
     targetAudience?: 'beginners' | 'intermediate' | 'advanced' | 'everyone';
   }): Promise<ApiResponse<any>> {
-    return this.request('/ai-quests/from-idea', {
+    return this.request<any>('/ai-quests/from-idea', {
       method: 'POST',
       body: JSON.stringify(idea),
     });
   }
 
-  async getGenerationStats(): Promise<ApiResponse<any>> {
-    return this.request('/ai-quests/stats');
+  async getRandomQuest(): Promise<ApiResponse<any>> {
+    // Generate a random quest using AI with minimal parameters
+    const response = await this.request<any[]>('/ai-quests/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'quick',
+        difficulty: 'easy',
+        count: 1,
+      }),
+    });
+
+    if (!response.success || !response.data || response.data.length === 0) {
+      throw new Error('Failed to generate random quest');
+    }
+
+    // Return the first (and only) generated quest
+    return {
+      ...response,
+      data: response.data[0]
+    };
   }
 
-  async getPersonalizedSuggestions(): Promise<ApiResponse<any>> {
-    return this.request('/ai-quests/suggestions');
+  // Submission endpoints
+  async submitQuest(
+    questId: string,
+    submissionData: {
+      type: string;
+      caption: string;
+      textContent?: string;
+      mediaUrls?: string[];
+      checklistData?: any;
+      latitude?: number;
+      longitude?: number;
+      address?: string;
+      privacy?: string;
+    }
+  ): Promise<ApiResponse<Submission>> {
+    return this.request<Submission>('/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ questId, ...submissionData }),
+    });
+  }
+
+  async getSubmissions(
+    questId?: string,
+    pagination: PaginationParams = {}
+  ): Promise<ApiResponse<Submission[]>> {
+    const endpoint = questId ? `/quests/${questId}/submissions` : '/submissions';
+    const queryString = this.buildQueryString(pagination);
+    return this.request<Submission[]>(`${endpoint}${queryString}`);
+  }
+
+  async getSubmission(id: string): Promise<ApiResponse<Submission>> {
+    return this.request<Submission>(`/submissions/${id}`);
+  }
+
+  async updateSubmission(id: string, submissionData: Partial<Submission>): Promise<ApiResponse<Submission>> {
+    return this.request<Submission>(`/submissions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(submissionData),
+    });
+  }
+
+  async deleteSubmission(id: string): Promise<ApiResponse<void>> {
+    return this.request<void>(`/submissions/${id}`, { method: 'DELETE' });
+  }
+
+  // Notification endpoints
+  async getNotifications(pagination: PaginationParams = {}): Promise<ApiResponse<any[]>> {
+    const queryString = this.buildQueryString(pagination);
+    return this.request<any[]>(`/notifications${queryString}`);
+  }
+
+  async getUnreadCount(): Promise<ApiResponse<{ count: number }>> {
+    return this.request<{ count: number }>('/notifications/unread-count');
+  }
+
+  async markAsRead(id: string): Promise<ApiResponse<void>> {
+    return this.request<void>(`/notifications/${id}/read`, { method: 'PUT' });
+  }
+
+  async markAllAsRead(): Promise<ApiResponse<void>> {
+    return this.request<void>('/notifications/read-all', { method: 'PUT' });
+  }
+
+  // Media endpoints
+  async uploadFile(file: File, category: string): Promise<ApiResponse<{ url: string }>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('category', category);
+
+    const response = await fetch(`${this.baseURL}/media/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: this.accessToken ? `Bearer ${this.accessToken}` : '',
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Quest Progress endpoints
+  async startQuest(questId: string): Promise<ApiResponse<any>> {
+    return this.request<any>('/quest-progress/start', {
+      method: 'POST',
+      body: JSON.stringify({ questId }),
+    });
+  }
+
+  async submitQuest(questId: string, submission: {
+    type: 'PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST';
+    caption: string;
+    textContent?: string;
+    mediaUrls?: string[];
+    checklistData?: any;
+    latitude?: number;
+    longitude?: number;
+    address?: string;
+    privacy?: 'public' | 'private';
+  }): Promise<ApiResponse<any>> {
+    return this.request<any>('/quest-progress/submit', {
+      method: 'POST',
+      body: JSON.stringify({ questId, submission }),
+    });
+  }
+
+  async getQuestProgress(questId: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/quest-progress/${questId}`);
+  }
+
+  async getUserQuests(status?: string, pagination: PaginationParams = {}): Promise<ApiResponse<any[]>> {
+    const params = { status, ...pagination };
+    const queryString = this.buildQueryString(params);
+    return this.request<any[]>(`/quest-progress/user${queryString}`);
+  }
+
+  async getUserStats(): Promise<ApiResponse<any>> {
+    return this.request<any>('/quest-progress/user/stats');
+  }
+
+  async abandonQuest(questId: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/quest-progress/${questId}/abandon`, {
+      method: 'POST',
+    });
+  }
+
+  async completeQuest(questId: string): Promise<ApiResponse<any>> {
+    return this.request<any>(`/quest-progress/${questId}/complete`, {
+      method: 'POST',
+    });
   }
 
   // Health check
-  async healthCheck(): Promise<ApiResponse<any>> {
-    // Use absolute URL for health check
-    return fetch(`${this.baseUrl.replace('/api', '')}/health`)
-      .then(res => res.json())
-      .catch(() => ({ 
-        status: 'error', 
-        message: 'API server not available' 
-      }));
+  async healthCheck(): Promise<ApiResponse<{ status: string }>> {
+    return this.request<{ status: string }>('/../health');
   }
 }
 
-// Create singleton instance
+// Export singleton instance
 export const apiClient = new ApiClient();
 
-// Export types
-export type { 
-  ApiResponse, 
-  PaginationParams, 
-  QuestFilters, 
-  AuthTokens, 
-  LoginCredentials, 
-  RegisterCredentials, 
-  AuthResponse 
+// Export types for use in components
+export type {
+  ApiResponse,
+  LoginCredentials,
+  RegisterCredentials,
+  AuthResponse,
+  UserProfile,
+  UserPreferences,
+  QuestFilters,
+  PaginationParams,
 };

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { AuthenticationError, AuthorizationError } from './errorHandler';
 import type { User, UserRole } from '../types';
 import config from '../config';
+import { prisma } from '../services/database';
 
 // Extend Request type to include user
 declare global {
@@ -37,48 +38,70 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
 
     // Verify JWT token
     const decoded = jwt.verify(token, config.jwt.secret) as JwtPayload;
-    
-    // TODO: In a real implementation, you would fetch the user from the database
-    // For now, we'll create a mock user object
-    const user: User = {
-      id: decoded.userId,
-      username: 'MockUser', // This would come from DB
-      email: 'mock@example.com', // This would come from DB
-      role: decoded.role,
-      level: 1,
-      xp: 0,
-      totalPoints: 0,
-      currentStreak: 0,
-      longestStreak: 0,
-      badges: [],
-      joinedAt: new Date().toISOString(),
-      isActive: true,
-      lastActiveAt: new Date().toISOString(),
-      emailVerified: true,
+
+    // Fetch user from database
+    const dbUser = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        avatar: true,
+        role: true,
+        isActive: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        lastActiveAt: true,
+        preferences: true,
+      }
+    });
+
+    if (!dbUser || !dbUser.isActive) {
+      throw new AuthenticationError('User not found or inactive');
+    }
+
+    // Create user object matching the expected interface
+    const user = {
+      id: dbUser.id,
+      username: dbUser.username,
+      email: dbUser.email,
+      avatar: dbUser.avatar || undefined,
+      role: dbUser.role as UserRole,
+      isActive: dbUser.isActive,
+      emailVerified: dbUser.emailVerified,
+      joinedAt: dbUser.createdAt.toISOString(),
+      lastActiveAt: dbUser.lastActiveAt?.toISOString() || new Date().toISOString(),
+      level: 1, // TODO: Calculate from user data
+      xp: 0, // TODO: Calculate from user data
+      totalPoints: 0, // TODO: Calculate from user data
+      currentStreak: 0, // TODO: Calculate from user data
+      longestStreak: 0, // TODO: Calculate from user data
+      badges: [], // TODO: Fetch from database
       preferences: {
         notifications: {
-          email: true,
-          push: true,
+          email: dbUser.preferences?.emailNotifications ?? true,
+          push: dbUser.preferences?.pushNotifications ?? true,
           streakReminders: true,
           newQuests: true,
           challenges: true,
           badges: true,
         },
         privacy: {
-          profileVisibility: 'public',
+          profileVisibility: (dbUser.preferences?.profileVisibility as 'public' | 'friends' | 'private') || 'public',
           shareCompletions: true,
           showLocation: false,
         },
         questPreferences: {
-          preferredCategories: [],
-          difficulty: ['easy', 'medium'],
+          preferredCategories: dbUser.preferences?.preferredCategories ? JSON.parse(dbUser.preferences.preferredCategories as string) : [],
+          difficulty: dbUser.preferences?.preferredDifficulty ? JSON.parse(dbUser.preferences.preferredDifficulty as string) : ['easy', 'medium'],
           timeAvailable: 30,
         },
       },
     };
 
     // Attach user to request
-    req.user = user;
+    req.user = user as User;
     
     next();
   } catch (error) {
@@ -102,46 +125,65 @@ export const optionalAuth = async (req: Request, _res: Response, next: NextFunct
       
       if (token) {
         const decoded = jwt.verify(token, config.jwt.secret) as JwtPayload;
-        
-        // TODO: Fetch user from database
-        const user: User = {
-          id: decoded.userId,
-          username: 'MockUser',
-          email: 'mock@example.com',
-          role: decoded.role,
-          level: 1,
-          xp: 0,
-          totalPoints: 0,
-          currentStreak: 0,
-          longestStreak: 0,
-          badges: [],
-          joinedAt: new Date().toISOString(),
-          isActive: true,
-          lastActiveAt: new Date().toISOString(),
-          emailVerified: true,
-          preferences: {
-            notifications: {
-              email: true,
-              push: true,
-              streakReminders: true,
-              newQuests: true,
-              challenges: true,
-              badges: true,
-            },
-            privacy: {
-              profileVisibility: 'public',
-              shareCompletions: true,
-              showLocation: false,
-            },
-            questPreferences: {
-              preferredCategories: [],
-              difficulty: ['easy', 'medium'],
-              timeAvailable: 30,
-            },
-          },
-        };
 
-        req.user = user;
+        // Fetch user from database
+        const dbUser = await prisma.user.findUnique({
+          where: { id: decoded.userId },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            avatar: true,
+                role: true,
+            isActive: true,
+            emailVerified: true,
+            createdAt: true,
+            updatedAt: true,
+            lastActiveAt: true,
+            preferences: true,
+          }
+        });
+
+        if (dbUser && dbUser.isActive) {
+          const user = {
+            id: dbUser.id,
+            username: dbUser.username,
+            email: dbUser.email,
+            avatar: dbUser.avatar || undefined,
+                  role: dbUser.role as UserRole,
+            isActive: dbUser.isActive,
+            emailVerified: dbUser.emailVerified,
+            joinedAt: dbUser.createdAt.toISOString(),
+            lastActiveAt: dbUser.lastActiveAt?.toISOString() || new Date().toISOString(),
+            level: 1,
+            xp: 0,
+            totalPoints: 0,
+            currentStreak: 0,
+            longestStreak: 0,
+            badges: [],
+            preferences: {
+              notifications: {
+                email: dbUser.preferences?.emailNotifications ?? true,
+                push: dbUser.preferences?.pushNotifications ?? true,
+                streakReminders: true,
+                newQuests: true,
+                challenges: true,
+                badges: true,
+              },
+              privacy: {
+                profileVisibility: (dbUser.preferences?.profileVisibility as 'public' | 'friends' | 'private') || 'public',
+                shareCompletions: true,
+                showLocation: false,
+              },
+              questPreferences: {
+                preferredCategories: dbUser.preferences?.preferredCategories ? JSON.parse(dbUser.preferences.preferredCategories as string) : [],
+                difficulty: dbUser.preferences?.preferredDifficulty ? JSON.parse(dbUser.preferences.preferredDifficulty as string) : ['easy', 'medium'],
+                timeAvailable: 30,
+              },
+            },
+          };
+          req.user = user as User;
+        }
       }
     }
     

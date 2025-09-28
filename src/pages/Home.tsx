@@ -1,44 +1,33 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QuestCard } from "@/components/ui/quest-card";
-import { XPBar } from "@/components/ui/xp-bar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { Zap, Flame, ChevronRight, Bell, AlertCircle, RefreshCw } from "lucide-react";
 import { useUser } from "@/contexts/UserContext";
 import { useQuests, useFeaturedQuest, useRandomQuest } from "@/hooks/useQuests";
-import { useUnreadNotificationsCount } from "@/hooks/useLeaderboard";
-import { calculateXPToNextLevel } from "@/lib/progression";
+// Removed useUnreadNotificationsCount import for MVP
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { AuthTest } from "@/components/AuthTest";
+import { EmailVerificationBanner } from "@/components/EmailVerificationBanner";
 
 export default function Home() {
   const navigate = useNavigate();
   const { state } = useUser();
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
   
   const user = state.user;
-  const xpProgress = calculateXPToNextLevel(user.xp);
   
   // Data fetching hooks
   const { data: featuredQuest, isLoading: featuredLoading, error: featuredError } = useFeaturedQuest();
-  const { data: quests = [], isLoading: questsLoading, error: questsError, refetch: refetchQuests } = useQuests(selectedFilter === 'all' ? undefined : selectedFilter);
-  const unreadCount = useUnreadNotificationsCount();
+  const { data: quests = [], isLoading: questsLoading, error: questsError, refetch: refetchQuests } = useQuests();
+  // Removed unreadCount for MVP
   const randomQuestMutation = useRandomQuest();
   
   // Filter out featured quest from the regular list
   const otherQuests = quests.filter(q => q.id !== featuredQuest?.id);
 
-  const filters = [
-    { id: 'all', label: 'All Quests' },
-    { id: 'kindness', label: 'Kindness' },
-    { id: 'creativity', label: 'Creativity' },
-    { id: 'mindfulness', label: 'Mindfulness' },
-    { id: 'photography', label: 'Photography' }
-  ];
 
   const handleStartQuest = (questId: string) => {
     navigate(`/quest/${questId}`);
@@ -62,30 +51,23 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Auth Test - Remove this in production */}
-      <div className="p-4">
-        <AuthTest />
-      </div>
-      
       {/* Header */}
-      <header className="sticky top-0 z-40 glass-effect border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between max-w-md mx-auto">
+      <header className="sticky top-0 z-40 glass-effect border-b border-border px-3 py-2">
+        <div className="flex items-center justify-between w-full">
           <div>
-            <h1 className="text-xl font-bold text-gradient">SideQuest</h1>
+            <h1 className="text-lg font-bold text-gradient">SideQuest</h1>
             <p className="text-xs text-muted-foreground">Level up your life</p>
           </div>
-          <Button variant="ghost" size="sm" className="relative">
+          <Button variant="ghost" size="sm">
             <Bell className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
           </Button>
         </div>
       </header>
 
-      <div className="max-w-md mx-auto px-4 py-6 space-y-6">
+      <div className="w-full px-3 py-4 space-y-4">
+        {/* Email Verification Banner */}
+        <EmailVerificationBanner />
+
         {/* User Stats */}
         <Card className="bg-gradient-to-r from-primary/10 to-accent/10 border-primary/20">
           <CardContent className="pt-6">
@@ -97,24 +79,11 @@ export default function Home() {
               </div>
               <div className="flex-1">
                 <h2 className="font-semibold text-foreground">{user.username}</h2>
-                <div className="flex items-center gap-3 text-sm">
-                  <div className="flex items-center gap-1">
-                    <Zap className="w-4 h-4 text-primary" />
-                    <span>{user.totalPoints}</span>
-                  </div>
-                  <div className="flex items-center gap-1 streak-flame">
-                    <Flame className="w-4 h-4" />
-                    <span>{user.currentStreak}</span>
-                  </div>
+                <div className="text-sm text-muted-foreground">
+                  Welcome back!
                 </div>
               </div>
             </div>
-            <XPBar 
-              current={xpProgress.current} 
-              max={xpProgress.max} 
-              level={user.level}
-              showLabels={false}
-            />
           </CardContent>
         </Card>
 
@@ -168,25 +137,6 @@ export default function Home() {
           ) : null}
         </section>
 
-        {/* Quest Filters */}
-        <section>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {filters.map((filter) => (
-              <Button
-                key={filter.id}
-                variant={selectedFilter === filter.id ? "default" : "outline"}
-                size="sm"
-                className={cn(
-                  "shrink-0 transition-all",
-                  selectedFilter === filter.id && "bg-primary text-primary-foreground"
-                )}
-                onClick={() => setSelectedFilter(filter.id)}
-              >
-                {filter.label}
-              </Button>
-            ))}
-          </div>
-        </section>
 
         {/* Quest Feed */}
         <section>
@@ -245,8 +195,8 @@ export default function Home() {
                     <p className="font-medium">No quests found</p>
                     <p className="text-sm text-muted-foreground">Try a different filter or check back later</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setSelectedFilter('all')}>
-                    Clear Filters
+                  <Button variant="outline" size="sm" onClick={handleRefresh}>
+                    Refresh
                   </Button>
                 </div>
               </CardContent>
@@ -270,21 +220,21 @@ export default function Home() {
           <CardHeader>
             <h3 className="font-semibold">Quick Start</h3>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3">
-            <Button 
-              variant="outline" 
-              className="flex flex-col gap-2 h-auto py-4"
+          <CardContent className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              className="flex flex-col gap-1 h-auto py-3"
               onClick={handleRandomQuest}
               disabled={randomQuestMutation.isPending}
             >
-              <Zap className={cn("w-6 h-6 text-primary", randomQuestMutation.isPending && "animate-pulse")} />
-              <span className="text-sm">
+              <Zap className={cn("w-5 h-5 text-primary", randomQuestMutation.isPending && "animate-pulse")} />
+              <span className="text-xs">
                 {randomQuestMutation.isPending ? "Finding..." : "Random Quest"}
               </span>
             </Button>
-            <Button variant="outline" className="flex flex-col gap-2 h-auto py-4">
-              <Flame className="w-6 h-6 text-warning" />
-              <span className="text-sm">Streak Saver</span>
+            <Button variant="outline" className="flex flex-col gap-1 h-auto py-3">
+              <Flame className="w-5 h-5 text-warning" />
+              <span className="text-xs">Streak Saver</span>
             </Button>
           </CardContent>
         </Card>

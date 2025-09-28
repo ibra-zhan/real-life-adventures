@@ -108,20 +108,9 @@ export const register = async (req: Request, res: Response) => {
           create: {
             emailNotifications: true,
             pushNotifications: true,
-            streakReminders: true,
-            newQuestNotifications: true,
-            challengeNotifications: true,
-            badgeNotifications: true,
-            socialNotifications: true,
             profileVisibility: 'public',
-            shareCompletions: true,
-            showLocation: false,
-            showStreak: true,
-            showBadges: true,
             preferredCategories: JSON.stringify([]),
             preferredDifficulty: JSON.stringify(['EASY', 'MEDIUM']),
-            timeAvailablePerDay: 30,
-            autoAcceptFriendRequests: false,
           }
         }
       },
@@ -133,12 +122,6 @@ export const register = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         role: true,
         isActive: true,
         emailVerified: true,
@@ -205,12 +188,6 @@ export const login = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         role: true,
         isActive: true,
         emailVerified: true,
@@ -374,7 +351,7 @@ export const logout = async (req: Request, res: Response) => {
 
 export const logoutAll = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.userId;
+    const userId = (req as any).user?.id;
     
     if (!userId) {
       throw new AuthenticationError('User not authenticated');
@@ -502,7 +479,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 
 export const getProfile = async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.userId;
+    const userId = (req as any).user?.id;
     
     if (!userId) {
       throw new AuthenticationError('User not authenticated');
@@ -518,13 +495,6 @@ export const getProfile = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        timezone: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         role: true,
         isActive: true,
         emailVerified: true,

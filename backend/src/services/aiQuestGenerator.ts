@@ -1,754 +1,460 @@
-// AI Quest Generator Service
+import { geminiService } from './geminiService';
 import { prisma } from '@/services/database';
 import type { QuestDifficulty } from '@prisma/client';
 
-// AI Quest Generation Types
-interface QuestGenerationContext {
-  userId?: string;
-  categoryId?: string;
-  difficulty?: QuestDifficulty;
-  location?: {
-    latitude: number;
-    longitude: number;
-    city?: string | undefined;
-    country?: string | undefined;
-  };
-  weather?: {
-    temperature: number;
-    condition: string; // sunny, rainy, cloudy, etc.
-    season: string;
-  };
-  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night';
-  userPreferences?: {
-    interests?: string[] | undefined;
-    preferredDifficulties?: QuestDifficulty[] | undefined;
-    preferredCategories?: string[] | undefined;
-  };
-  userHistory?: {
-    completedQuests: number;
-    favoriteCategories: string[];
-    averageCompletionTime: number;
-    currentStreak: number;
-  };
+// Define the expected output structure from the AI
+interface AIQuestOutput {
+  title: string;
+  shortDescription: string;
+  category: 'fitness' | 'learning';
+  difficulty: 'easy' | 'medium' | 'hard' | 'epic';
+  duration_min: number;
+  description: string;
+  safety_notes: string;
+  proof: string[];
+  xp: number;
 }
 
-interface GeneratedQuest {
+// Input for quest generation
+export interface QuestGenerationInput {
+  mode: 'quick' | 'custom';
+  difficulty: 'easy' | 'medium' | 'hard' | 'epic';
+  category?: 'fitness' | 'learning';
+  userId?: string; // Optional for personalization
+}
+
+// Internal representation of a generated quest
+export interface GeneratedQuest {
   title: string;
-  description: string;
+  description: string; // This will be the full description from AI
   shortDescription: string;
-  instructions?: string;
+  instructions?: string; // This will be derived from safety_notes
   categoryId: string;
-  difficulty: QuestDifficulty;
+  difficulty: QuestDifficulty; // Uppercase for Prisma
   tags: string[];
-  requirements: string[];
-  points: number;
+  requirements: string[]; // This will be derived from proof
   estimatedTime: number;
   submissionTypes: ('PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST')[];
   locationRequired: boolean;
-  locationType?: 'indoor' | 'outdoor' | 'specific';
+  locationType?: 'indoor' | 'outdoor' | 'specific' | undefined;
   specificLocation?: string;
   allowSharing: boolean;
-  encourageSharing: boolean;
-  imageUrl?: string;
   complexity?: number;
   socialAspect?: boolean;
 }
 
-// Quest Templates by Category
-const QUEST_TEMPLATES = {
-  kindness: [
-    {
-      template: "compliment_stranger",
-      title: "Random Acts of Kindness",
-      baseDescription: "Brighten someone's day with a genuine compliment",
-      variations: [
-        { target: "barista", location: "coffee shop", action: "compliment their service" },
-        { target: "cashier", location: "store", action: "thank them for their help" },
-        { target: "neighbor", location: "neighborhood", action: "compliment their garden" },
-        { target: "colleague", location: "workplace", action: "acknowledge their hard work" },
-      ]
-    },
-    {
-      template: "help_someone",
-      title: "Lending a Hand",
-      baseDescription: "Help someone with a task or problem",
-      variations: [
-        { action: "help carry groceries", location: "grocery store", target: "elderly person" },
-        { action: "give directions", location: "street", target: "lost tourist" },
-        { action: "hold the door", location: "building entrance", target: "person with hands full" },
-        { action: "help with technology", location: "anywhere", target: "someone struggling" },
-      ]
-    }
-  ],
-  fitness: [
-    {
-      template: "daily_exercise",
-      title: "Movement Challenge",
-      baseDescription: "Incorporate physical activity into your day",
-      variations: [
-        { activity: "take stairs", duration: "all day", goal: "count flights climbed" },
-        { activity: "walk meeting", duration: "30 minutes", goal: "conduct a meeting while walking" },
-        { activity: "desk exercises", duration: "every hour", goal: "do 10 stretches per hour" },
-        { activity: "dance break", duration: "5 minutes", goal: "dance to 2 songs" },
-      ]
-    },
-    {
-      template: "outdoor_activity",
-      title: "Nature Fitness",
-      baseDescription: "Exercise in nature",
-      variations: [
-        { activity: "park workout", location: "local park", goal: "20 minutes of bodyweight exercises" },
-        { activity: "hiking", location: "nature trail", goal: "complete a 2-mile hike" },
-        { activity: "outdoor yoga", location: "garden or park", goal: "20-minute yoga session" },
-        { activity: "bike ride", location: "neighborhood", goal: "30-minute bike ride" },
-      ]
-    }
-  ],
-  creativity: [
-    {
-      template: "artistic_expression",
-      title: "Creative Expression",
-      baseDescription: "Create something artistic",
-      variations: [
-        { medium: "photography", subject: "shadows", goal: "capture 5 interesting shadow photos" },
-        { medium: "drawing", subject: "daily objects", goal: "sketch 3 items from your desk" },
-        { medium: "writing", subject: "gratitude", goal: "write a 100-word gratitude note" },
-        { medium: "music", subject: "rhythm", goal: "create a 30-second beat with household items" },
-      ]
-    },
-    {
-      template: "diy_project",
-      title: "DIY Creation",
-      baseDescription: "Make something useful or beautiful",
-      variations: [
-        { project: "origami", goal: "fold 5 different animals", materials: "paper" },
-        { project: "upcycling", goal: "transform an old item", materials: "household items" },
-        { project: "plant care", goal: "create a mini garden", materials: "small containers" },
-        { project: "decoration", goal: "beautify your space", materials: "natural elements" },
-      ]
-    }
-  ],
-  mindfulness: [
-    {
-      template: "meditation_practice",
-      title: "Mindful Moments",
-      baseDescription: "Practice mindfulness and presence",
-      variations: [
-        { practice: "breathing", duration: "10 minutes", location: "quiet space" },
-        { practice: "walking meditation", duration: "15 minutes", location: "outdoors" },
-        { practice: "gratitude reflection", duration: "5 minutes", location: "anywhere" },
-        { practice: "body scan", duration: "10 minutes", location: "comfortable position" },
-      ]
-    },
-    {
-      template: "awareness_exercise",
-      title: "Present Moment Awareness",
-      baseDescription: "Heighten your awareness of the present",
-      variations: [
-        { focus: "5 senses", goal: "notice 5 things you can see, 4 hear, 3 feel, 2 smell, 1 taste" },
-        { focus: "sounds", goal: "sit quietly and identify 10 different sounds" },
-        { focus: "textures", goal: "touch and describe 7 different textures" },
-        { focus: "colors", goal: "find and photograph 6 different shades of one color" },
-      ]
-    }
-  ],
-  social: [
-    {
-      template: "connection_building",
-      title: "Social Connection",
-      baseDescription: "Build meaningful connections with others",
-      variations: [
-        { action: "call old friend", goal: "have a 20-minute catch-up conversation" },
-        { action: "meet new person", goal: "introduce yourself to a neighbor" },
-        { action: "group activity", goal: "organize a small gathering with friends" },
-        { action: "active listening", goal: "have a deep conversation without giving advice" },
-      ]
-    },
-    {
-      template: "community_engagement",
-      title: "Community Involvement",
-      baseDescription: "Engage with your local community",
-      variations: [
-        { activity: "local event", goal: "attend a community event" },
-        { activity: "support local", goal: "visit and support a local business" },
-        { activity: "volunteering", goal: "offer help to a local organization" },
-        { activity: "neighborhood improvement", goal: "do something to beautify your area" },
-      ]
-    }
-  ],
-  learning: [
-    {
-      template: "skill_development",
-      title: "Learning Challenge",
-      baseDescription: "Learn something new",
-      variations: [
-        { skill: "language", goal: "learn 10 new words in a foreign language" },
-        { skill: "cooking", goal: "try a recipe from a different culture" },
-        { skill: "technology", goal: "learn a new app or software feature" },
-        { skill: "history", goal: "research the history of your neighborhood" },
-      ]
-    },
-    {
-      template: "knowledge_sharing",
-      title: "Teaching Moment",
-      baseDescription: "Share knowledge with others",
-      variations: [
-        { method: "tutorial", goal: "teach someone a skill you know" },
-        { method: "documentation", goal: "write instructions for something you do well" },
-        { method: "demonstration", goal: "show someone how to do something practical" },
-        { method: "storytelling", goal: "share an interesting fact or story you learned" },
-      ]
-    }
-  ],
-  adventure: [
-    {
-      template: "exploration",
-      title: "Local Explorer",
-      baseDescription: "Discover something new in your area",
-      variations: [
-        { location: "new restaurant", goal: "try a cuisine you've never had" },
-        { location: "hidden spot", goal: "find a place you've never been within 5 miles" },
-        { location: "historical site", goal: "visit and learn about a local landmark" },
-        { location: "nature area", goal: "explore a park or trail you haven't visited" },
-      ]
-    },
-    {
-      template: "challenge_comfort_zone",
-      title: "Comfort Zone Challenge",
-      baseDescription: "Do something that pushes your boundaries",
-      variations: [
-        { challenge: "public speaking", goal: "speak up in a meeting or group setting" },
-        { challenge: "new activity", goal: "try an activity you've always wanted to do" },
-        { challenge: "social interaction", goal: "start a conversation with a stranger" },
-        { challenge: "creative risk", goal: "share something you've created with others" },
-      ]
-    }
-  ],
-  photography: [
-    {
-      template: "photo_challenge",
-      title: "Photography Mission",
-      baseDescription: "Capture the world through your lens",
-      variations: [
-        { theme: "golden hour", goal: "take 5 photos during sunrise or sunset" },
-        { theme: "street photography", goal: "capture everyday life in your neighborhood" },
-        { theme: "macro photography", goal: "photograph small details up close" },
-        { theme: "black and white", goal: "create 7 compelling monochrome images" },
-      ]
-    },
-    {
-      template: "visual_storytelling",
-      title: "Story in Pictures",
-      baseDescription: "Tell a story through photography",
-      variations: [
-        { story: "day in the life", goal: "document your entire day in 10 photos" },
-        { story: "local character", goal: "photograph someone interesting in your community" },
-        { story: "transformation", goal: "show before and after of something changing" },
-        { story: "emotions", goal: "capture 5 different emotions in photographs" },
-      ]
-    }
-  ]
-};
-
-// Difficulty scaling factors
-const DIFFICULTY_MULTIPLIERS = {
-  EASY: { points: 1, time: 1, complexity: 0.5 },
-  MEDIUM: { points: 1.5, time: 1.5, complexity: 1 },
-  HARD: { points: 2.5, time: 2, complexity: 1.5 },
-  EPIC: { points: 4, time: 3, complexity: 2 }
-};
-
-// Weather-based quest modifications
-const WEATHER_MODIFIERS = {
-  sunny: {
-    outdoor_bonus: 1.2,
-    preferred_activities: ['photography', 'exercise', 'exploration'],
-    avoid_activities: []
-  },
-  rainy: {
-    indoor_bonus: 1.3,
-    preferred_activities: ['creativity', 'learning', 'mindfulness'],
-    avoid_activities: ['outdoor_exercise', 'photography']
-  },
-  cloudy: {
-    neutral: true,
-    preferred_activities: ['social', 'kindness', 'learning'],
-    avoid_activities: []
-  },
-  snowy: {
-    indoor_bonus: 1.4,
-    preferred_activities: ['creativity', 'social', 'learning'],
-    avoid_activities: ['outdoor_exercise']
-  }
-};
-
 class AIQuestGenerator {
-  
-  /**
-   * Generate a personalized quest based on context
-   */
-  async generateQuest(context: QuestGenerationContext): Promise<GeneratedQuest> {
+  private lastGeneratedCategory: 'fitness' | 'learning' | null = null;
+
+  private getSystemPrompt(): string {
+    return `
+# Role
+
+**SideQuest** is a mobile-first app that gives people **real-life mini-challenges ("quests")** they can do today, then rewards them with **XP, streaks, and badges** and lets them **share** wins.
+
+You are the **Random Quest Generator**. On each call, return **one universally doable quest** (no equipment, no cost). Quests are either **fitness** (walk/run/bodyweight, "local explorer" style) or **learning** (study from free resources). Scale difficulty strictly by the user's choice and keep results diverse across calls.
+
+---
+
+## Inputs
+
+* \`mode\`: \`"quick" | "custom"\`
+* \`difficulty\`: \`"easy" | "medium" | "hard" | "epic"\`
+* \`category\` (optional for custom): \`"fitness" | "learning"\`
+
+---
+
+## Global Rules
+
+* Output **one** quest only.
+* Keep copy **concise and actionable**.
+* Distances must show **km and miles**.
+* Always include a **safe, low-impact alternative** for fitness.
+* Maintain **diversity**: rotate templates; don't repeat the exact template back-to-back (if category not given, alternate fitness/learning).
+
+---
+
+## Difficulty Scaling
+
+* **XP:** easy=50, medium=100, hard=150, epic=250
+* **Learning time:** easy 20–25 min · medium 40–50 · hard 75–90 · epic 120–150
+* **Run distance:** easy 2 km (1.2 mi) · medium 5 km (3.1 mi) · hard 10 km (6.2 mi) · epic 15 km (9.3 mi)
+* **Power-walk ("Local Explorer") time:** easy 20 min · medium 35 · hard 60 · epic 90
+* **Bodyweight circuit (rounds x reps):**
+
+  * easy: 2r — 10 squats, 6 push-ups (knees ok), 10 lunges/leg, 20 jumping jacks
+  * medium: 3r — 15, 10, 12/leg, 30
+  * hard: 4r — 20, 15, 15/leg, 40
+  * epic: 5r — 25, 20, 18/leg, 50
+
+---
+
+## Templates (pick one; if \`category\` provided, restrict to it)
+
+1. **Run Quest (fitness)**
+   Title: "Run **{distance}** today"
+   Short: "Warm up, run the set distance, then cool down."
+   Description: Mix of steps + coaching note. Example:
+   
+   Warm up with a 5-min brisk walk
+   
+   Run {distance} at a steady pace
+   
+   End with 5-min stretching
+   
+   Tip: If running feels tough, swap for a brisk walk of the same duration.
+
+2. **Power-Walk / Local Explorer (fitness)**
+   Title: "Power-walk **{minutes}** and spot 3 new things"
+   Short: "Take a brisk walk and notice your surroundings."
+   Description:
+   
+   Walk briskly for {minutes}
+   
+   Keep posture upright, arms moving
+   
+   Pay attention to at least 3 things you've never noticed before
+   
+   This quest doubles as light cardio and mindfulness.
+
+3. **Bodyweight Circuit (fitness)**
+   Title: "Bodyweight circuit — **{rounds/reps}**"
+   Short: "A quick bodyweight workout at home."
+   Description:
+   
+   Do squats, push-ups, lunges, and jumping jacks as listed
+   
+   Rest 60–90 seconds between rounds
+   
+   Keep form controlled; knee push-ups allowed
+   
+   End with light stretching for recovery.
+
+4. **Focused Study Sprint (learning)**
+   Title: "Learn **one topic** in **{minutes}**"
+   Short: "Dive into a topic with focused study."
+   Description:
+   
+   Pick a free article or video on a beginner topic (memory palaces, note-taking, SQL basics)
+   
+   Study for {minutes} with full focus
+   
+   Write down key points in bullet form
+   
+   Summarize in 5 sentences
+   
+   This helps retention and builds a study habit.
+
+5. **Skill Micro-Lesson (learning)**
+   Title: "Master basics of **{micro-skill}** in **{minutes}**"
+   Short: "Learn and capture fundamentals quickly."
+   Description:
+   
+   Choose a beginner-friendly guide on the skill
+   
+   Spend study time reading/watching
+   
+   Create flashcards: easy=5, medium=10, hard=20, epic=30
+   
+   Review them once before finishing
+   
+   By writing cards yourself, you test recall immediately.
+
+---
+
+## Output (return **exactly** this shape)
+
+\`\`\`json
+{
+  "title": "<<=60 chars>",
+  "shortDescription": "<<=120 chars>",
+  "category": "fitness" | "learning",
+  "difficulty": "easy" | "medium" | "hard" | "epic",
+  "duration_min": <integer>,
+  "description": "<mix of 3–5 concrete steps and 1 coaching note, plain text>",
+  "safety_notes": "<short (fitness only); empty string for learning>",
+  "proof": ["<option 1>", "<option 2>"],
+  "xp": <50|100|150|250>
+}
+\`\`\`
+
+---
+
+## Description Rules
+
+* Must never be empty.
+* Always provide clear steps (bullet points or numbers).
+* Add 1 short coaching/motivational note at the end (paragraph style).
+* Keep language short, actionable, and universal.
+
+---
+
+## Selection Logic
+
+* **Quick:** randomly pick a template; alternate category vs previous result.
+* **Custom:** honor the chosen category; then pick a template within it.
+* Apply **difficulty scaling** to fill minutes/distances/reps and XP.
+* Keep language **short, positive, and actionable**.
+`;
+  }
+
+  private getUserPrompt(input: QuestGenerationInput): string {
+    let prompt = `Generate a quest. Mode: ${input.mode}, Difficulty: ${input.difficulty}.`;
+    if (input.category) {
+      prompt += ` Category: ${input.category}.`;
+    } else if (input.mode === 'quick' && this.lastGeneratedCategory) {
+      // Alternate category for quick mode if not specified
+      const nextCategory = this.lastGeneratedCategory === 'fitness' ? 'learning' : 'fitness';
+      prompt += ` Try to alternate category, next should be: ${nextCategory}.`;
+    }
+    return prompt;
+  }
+
+  private async processAIOutput(aiOutput: AIQuestOutput): Promise<GeneratedQuest> {
+    const normalizedCategoryName =
+      aiOutput.category.charAt(0).toUpperCase() + aiOutput.category.slice(1).toLowerCase();
+
+    const category = await prisma.questCategory.findFirst({
+      where: { name: normalizedCategoryName },
+    });
+
+    if (!category) {
+      throw new Error(`Quest category '${aiOutput.category}' not found in database.`);
+    }
+
+    // Convert lowercase difficulty to uppercase for Prisma
+    const prismaDifficulty: QuestDifficulty = aiOutput.difficulty.toUpperCase() as QuestDifficulty;
+
+    // Use the description directly from AI (it already contains steps + coaching)
+    const description = aiOutput.description;
+    const instructions = aiOutput.safety_notes ? `Safety Notes: ${aiOutput.safety_notes}` : '';
+
+    // Determine submission types based on proof
+    const submissionTypes: ('PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST')[] = [];
+    if (aiOutput.proof.some(p => p.toLowerCase().includes('photo') || p.toLowerCase().includes('clip'))) {
+      submissionTypes.push('PHOTO');
+    }
+    if (aiOutput.proof.some(p => p.toLowerCase().includes('video') || p.toLowerCase().includes('clip'))) {
+      submissionTypes.push('VIDEO');
+    }
+    if (aiOutput.proof.some(p => p.toLowerCase().includes('text') || p.toLowerCase().includes('summary') || p.toLowerCase().includes('list'))) {
+      submissionTypes.push('TEXT');
+    }
+    // Default to TEXT if no specific type is inferred
+    if (submissionTypes.length === 0) {
+      submissionTypes.push('TEXT');
+    }
+
+    // Determine location requirements
+    const locationRequired = aiOutput.category === 'fitness' && (aiOutput.title.toLowerCase().includes('run') || aiOutput.title.toLowerCase().includes('walk'));
+    const locationType = locationRequired ? 'outdoor' : undefined; // Assuming fitness quests are outdoor
+    
+    return {
+      title: aiOutput.title,
+      description: description, // This is the full description from AI with steps + coaching
+      shortDescription: aiOutput.shortDescription,
+      instructions: instructions,
+      categoryId: category.id,
+      difficulty: prismaDifficulty,
+      tags: [aiOutput.category, aiOutput.difficulty],
+      requirements: aiOutput.proof,
+      estimatedTime: aiOutput.duration_min,
+      submissionTypes: submissionTypes,
+      locationRequired: locationRequired,
+      locationType: locationType as 'indoor' | 'outdoor' | 'specific' | undefined,
+      allowSharing: true,
+      complexity: 1, // Default complexity, AI doesn't provide this directly
+    };
+  }
+
+  async generateQuest(input: QuestGenerationInput): Promise<GeneratedQuest> {
     try {
-      // Get user preferences and history
-      const userContext = await this.getUserContext(context.userId);
-      const mergedContext = { ...context, ...userContext };
-      
-      // Determine category
-      const categoryId = await this.selectCategory(mergedContext);
-      const category = await this.getCategoryInfo(categoryId);
-      
-      // Determine difficulty
-      const difficulty = this.selectDifficulty(mergedContext);
-      
-      // Generate quest content
-      const questContent = await this.generateQuestContent(category.name.toLowerCase(), difficulty, mergedContext);
-      
-      // Calculate points and time
-      const { points, estimatedTime } = this.calculateRewards(difficulty, questContent.complexity || 1);
-      
-      // Generate tags
-      const tags = this.generateTags(category.name, difficulty, mergedContext);
-      
-      return {
-        ...questContent,
-        categoryId,
-        difficulty,
-        points,
-        estimatedTime,
-        tags,
-        allowSharing: true,
-        encourageSharing: questContent.socialAspect || false,
-      };
+      const systemPrompt = this.getSystemPrompt();
+      const userPrompt = this.getUserPrompt(input);
+
+      // Try Gemini first, fallback to mock if it fails
+      let aiOutput: AIQuestOutput;
+      try {
+        const aiResponse = await geminiService.generateQuest({
+          systemPrompt,
+          userPrompt,
+        });
+        aiOutput = JSON.parse(aiResponse.content);
+      } catch (geminiError) {
+        console.warn('Gemini API failed, using fallback mock quest generation:', geminiError);
+        aiOutput = this.generateMockQuest(input);
+      }
+
+      // Update last generated category for alternation logic
+      this.lastGeneratedCategory = aiOutput.category;
+
+      return this.processAIOutput(aiOutput);
     } catch (error) {
       console.error('Error generating quest:', error);
       throw new Error('Failed to generate quest');
     }
   }
-  
-  /**
-   * Generate multiple quests for variety
-   */
-  async generateQuestBatch(
-    context: QuestGenerationContext,
-    count: number = 5
-  ): Promise<GeneratedQuest[]> {
+
+  private generateMockQuest(input: QuestGenerationInput): AIQuestOutput {
+    // Determine category
+    let category: 'fitness' | 'learning';
+    if (input.category) {
+      category = input.category;
+    } else {
+      // Alternate categories for quick mode
+      category = this.lastGeneratedCategory === 'fitness' ? 'learning' : 'fitness';
+    }
+
+    // Mock quest templates
+    const fitnessQuests = [
+      {
+        title: "Power-walk 25 minutes and spot 3 new things",
+        shortDescription: "Take a brisk walk and notice your surroundings.",
+        description: "Walk briskly for 25 minutes\n\nKeep posture upright, arms moving\n\nPay attention to at least 3 things you've never noticed before\n\nThis quest doubles as light cardio and mindfulness.",
+        safety_notes: "Stay hydrated and wear comfortable shoes",
+        proof: ["Photo of your walking route", "Description of 3 new things you noticed"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'fitness')
+      },
+      {
+        title: "Bodyweight circuit — 3 rounds",
+        shortDescription: "A quick bodyweight workout at home.",
+        description: "Do squats, push-ups, lunges, and jumping jacks as listed\n\nRest 60–90 seconds between rounds\n\nKeep form controlled; knee push-ups allowed\n\nEnd with light stretching for recovery.",
+        safety_notes: "Warm up before starting, cool down after",
+        proof: ["Photo after completing workout", "Text description of how you felt"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'fitness')
+      },
+      {
+        title: `Run ${this.getDistanceForDifficulty(input.difficulty)} today`,
+        shortDescription: "Warm up, run the set distance, then cool down.",
+        description: "Warm up with a 5-min brisk walk\n\nRun at a steady pace\n\nEnd with 5-min stretching\n\nTip: If running feels tough, swap for a brisk walk of the same duration.",
+        safety_notes: "Stay hydrated and listen to your body",
+        proof: ["Photo of your running route", "Selfie after completing the run"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'fitness')
+      }
+    ];
+
+    const learningQuests = [
+      {
+        title: `Learn one topic in ${this.getDurationForDifficulty(input.difficulty, 'learning')} minutes`,
+        shortDescription: "Dive into a topic with focused study.",
+        description: "Pick a free article or video on a beginner topic\n\nStudy with full focus\n\nWrite down key points in bullet form\n\nSummarize in 5 sentences\n\nThis helps retention and builds a study habit.",
+        safety_notes: "",
+        proof: ["Text summary of what you learned", "Photo of your notes"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'learning')
+      },
+      {
+        title: "Master basics of a micro-skill",
+        shortDescription: "Learn and capture fundamentals quickly.",
+        description: "Choose a beginner-friendly guide on a new skill\n\nSpend time reading/watching\n\nCreate flashcards for key concepts\n\nReview them once before finishing\n\nBy writing cards yourself, you test recall immediately.",
+        safety_notes: "",
+        proof: ["Photo of your flashcards", "Text description of the skill you learned"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'learning')
+      },
+      {
+        title: "Practice a new language for 20 minutes",
+        shortDescription: "Build language skills with focused practice.",
+        description: "Choose a language learning app or website\n\nPractice vocabulary and basic phrases\n\nTry to have a simple conversation with yourself\n\nWrite down 5 new words you learned\n\nConsistent practice builds fluency over time.",
+        safety_notes: "",
+        proof: ["Text list of new words learned", "Voice recording saying hello in the language"],
+        xp: this.getXPForDifficulty(input.difficulty),
+        duration_min: this.getDurationForDifficulty(input.difficulty, 'learning')
+      }
+    ];
+
+    const quests = category === 'fitness' ? fitnessQuests : learningQuests;
+    const selectedQuest = quests[Math.floor(Math.random() * quests.length)];
+
+    if (!selectedQuest) {
+      // Fallback quest if selection fails
+      return {
+        title: 'Adventure Quest',
+        shortDescription: 'Complete this exciting challenge',
+        description: 'A fun challenge to complete',
+        safety_notes: 'Please be safe while completing this quest',
+        proof: ['Photo of completion'],
+        xp: 50,
+        duration_min: 30,
+        category,
+        difficulty: input.difficulty
+      };
+    }
+
+    return {
+      title: selectedQuest.title || 'Quest Challenge',
+      shortDescription: selectedQuest.shortDescription || 'Complete this exciting challenge',
+      description: selectedQuest.description || 'A fun challenge to complete',
+      safety_notes: selectedQuest.safety_notes || 'Please be safe while completing this quest',
+      proof: selectedQuest.proof || ['Photo of completion'],
+      xp: selectedQuest.xp || 50,
+      duration_min: selectedQuest.duration_min || 30,
+      category,
+      difficulty: input.difficulty
+    };
+  }
+
+  private getXPForDifficulty(difficulty: string): number {
+    switch (difficulty) {
+      case 'easy': return 50;
+      case 'medium': return 100;
+      case 'hard': return 150;
+      case 'epic': return 250;
+      default: return 50;
+    }
+  }
+
+  private getDurationForDifficulty(difficulty: string, category: 'fitness' | 'learning'): number {
+    if (category === 'learning') {
+      switch (difficulty) {
+        case 'easy': return 20;
+        case 'medium': return 40;
+        case 'hard': return 75;
+        case 'epic': return 120;
+        default: return 20;
+      }
+    } else {
+      // Fitness duration
+      switch (difficulty) {
+        case 'easy': return 20;
+        case 'medium': return 35;
+        case 'hard': return 60;
+        case 'epic': return 90;
+        default: return 20;
+      }
+    }
+  }
+
+  private getDistanceForDifficulty(difficulty: string): string {
+    switch (difficulty) {
+      case 'easy': return '2 km (1.2 mi)';
+      case 'medium': return '5 km (3.1 mi)';
+      case 'hard': return '10 km (6.2 mi)';
+      case 'epic': return '15 km (9.3 mi)';
+      default: return '2 km (1.2 mi)';
+    }
+  }
+
+  async generateQuestBatch(input: QuestGenerationInput, count: number): Promise<GeneratedQuest[]> {
     const quests: GeneratedQuest[] = [];
-    const usedTemplates = new Set<string>();
-    
     for (let i = 0; i < count; i++) {
       try {
-        // Vary the context slightly for each quest
-        const variedContext = this.varyContext(context, i);
-        const quest = await this.generateQuest(variedContext);
-        
-        // Ensure variety by avoiding duplicate templates
-        const questKey = `${quest.categoryId}-${quest.title}`;
-        if (!usedTemplates.has(questKey)) {
-          quests.push(quest);
-          usedTemplates.add(questKey);
+        // For batch, we might want to vary category/difficulty if not specified
+        const currentInput = { ...input };
+        if (input.mode === 'quick' && !input.category) {
+          currentInput.category = this.lastGeneratedCategory === 'fitness' ? 'learning' : 'fitness';
         }
+        const quest = await this.generateQuest(currentInput);
+        quests.push(quest);
       } catch (error) {
-        console.warn(`Failed to generate quest ${i + 1}:`, error);
+        console.warn(`Failed to generate quest in batch (attempt ${i + 1}):`, error);
       }
     }
-    
     return quests;
-  }
-  
-  /**
-   * Get user context for personalization
-   */
-  private async getUserContext(userId?: string): Promise<Partial<QuestGenerationContext>> {
-    if (!userId) return {};
-    
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          preferences: true,
-          submissions: {
-            where: { status: 'APPROVED' },
-            include: { quest: { include: { category: true } } }
-          }
-        }
-      });
-      
-      if (!user) return {};
-      
-      // Parse user preferences
-      const preferredCategories = user.preferences?.preferredCategories 
-        ? JSON.parse(user.preferences.preferredCategories as string) 
-        : [];
-      const preferredDifficulty = user.preferences?.preferredDifficulty 
-        ? JSON.parse(user.preferences.preferredDifficulty as string) 
-        : [];
-      
-      // Analyze user history
-      const completedQuests = user.submissions.length;
-      const favoriteCategories = this.analyzeFavoriteCategories(user.submissions);
-      const averageCompletionTime = this.calculateAverageCompletionTime(user.submissions);
-      
-      return {
-        userPreferences: {
-          interests: preferredCategories,
-          preferredDifficulties: preferredDifficulty,
-          preferredCategories
-        },
-        userHistory: {
-          completedQuests,
-          favoriteCategories,
-          averageCompletionTime,
-          currentStreak: user.currentStreak
-        }
-      };
-    } catch (error) {
-      console.warn('Error getting user context:', error);
-      return {};
-    }
-  }
-  
-  /**
-   * Select appropriate category based on context
-   */
-  private async selectCategory(context: QuestGenerationContext): Promise<string> {
-    // If category is specified, use it
-    if (context.categoryId) return context.categoryId;
-    
-    // Get all available categories
-    const categories = await prisma.questCategory.findMany({
-      where: { isActive: true }
-    });
-    
-    // Weight categories based on user preferences and context
-    const weights = categories.map(category => {
-      let weight = 1;
-      
-      // User preference bonus
-      if (context.userPreferences?.preferredCategories?.includes(category.name)) {
-        weight *= 2;
-      }
-      
-      // User history bonus
-      if (context.userHistory?.favoriteCategories.includes(category.name)) {
-        weight *= 1.5;
-      }
-      
-      // Weather context
-      if (context.weather) {
-        const modifier = WEATHER_MODIFIERS[context.weather.condition as keyof typeof WEATHER_MODIFIERS];
-        if (modifier?.preferred_activities.includes(category.name.toLowerCase())) {
-          weight *= 1.3;
-        }
-        if (modifier?.avoid_activities && (modifier.avoid_activities as string[]).includes(category.name.toLowerCase())) {
-          weight *= 0.5;
-        }
-      }
-      
-      // Time of day context
-      if (context.timeOfDay) {
-        if (context.timeOfDay === 'morning' && ['fitness', 'mindfulness'].includes(category.name.toLowerCase())) {
-          weight *= 1.2;
-        }
-        if (context.timeOfDay === 'evening' && ['social', 'creativity'].includes(category.name.toLowerCase())) {
-          weight *= 1.2;
-        }
-      }
-      
-      return { category, weight };
-    });
-    
-    // Select category using weighted random selection
-    const totalWeight = weights.reduce((sum, { weight }) => sum + weight, 0);
-    let random = Math.random() * totalWeight;
-    
-    for (const { category, weight } of weights) {
-      random -= weight;
-      if (random <= 0) {
-        return category.id;
-      }
-    }
-    
-    // Fallback to first category
-    return categories[0]?.id || '';
-  }
-  
-  /**
-   * Select difficulty based on user context
-   */
-  private selectDifficulty(context: QuestGenerationContext): QuestDifficulty {
-    if (context.difficulty) return context.difficulty;
-    
-    // Consider user preferences
-    if (context.userPreferences?.preferredDifficulties?.length) {
-      const preferred = context.userPreferences.preferredDifficulties;
-      const selected = preferred[Math.floor(Math.random() * preferred.length)];
-      return selected || 'EASY';
-    }
-    
-    // Consider user history
-    if (context.userHistory) {
-      const { completedQuests, currentStreak } = context.userHistory;
-      
-      // Scale difficulty based on experience
-      if (completedQuests < 5) return 'EASY';
-      if (completedQuests < 15) return Math.random() < 0.7 ? 'EASY' : 'MEDIUM';
-      if (completedQuests < 50) return Math.random() < 0.4 ? 'EASY' : Math.random() < 0.8 ? 'MEDIUM' : 'HARD';
-      
-      // High streak bonus - offer epic quests
-      if (currentStreak > 7) {
-        return Math.random() < 0.2 ? 'EPIC' : Math.random() < 0.5 ? 'HARD' : 'MEDIUM';
-      }
-    }
-    
-    // Default distribution
-    const rand = Math.random();
-    if (rand < 0.5) return 'EASY';
-    if (rand < 0.8) return 'MEDIUM';
-    if (rand < 0.95) return 'HARD';
-    return 'EPIC';
-  }
-  
-  /**
-   * Generate quest content based on templates and context
-   */
-  private async generateQuestContent(
-    categoryName: string,
-    difficulty: QuestDifficulty,
-    context: QuestGenerationContext
-  ): Promise<Omit<GeneratedQuest, 'categoryId' | 'difficulty' | 'points' | 'estimatedTime' | 'tags' | 'allowSharing' | 'encourageSharing'>> {
-    const templates = QUEST_TEMPLATES[categoryName as keyof typeof QUEST_TEMPLATES] || [];
-    
-    if (templates.length === 0) {
-      // Fallback generic quest
-      return this.generateGenericQuest(categoryName, difficulty);
-    }
-    
-    // Select random template
-    const template = templates[Math.floor(Math.random() * templates.length)];
-    if (!template) return this.generateGenericQuest(categoryName, difficulty);
-    
-    const variation = template.variations[Math.floor(Math.random() * template.variations.length)];
-    
-    // Customize based on difficulty and context
-    const customizedQuest = this.customizeQuestForContext(template, variation, difficulty, context);
-    
-    return customizedQuest;
-  }
-  
-  /**
-   * Customize quest based on context
-   */
-  private customizeQuestForContext(
-    template: any,
-    variation: any,
-    difficulty: QuestDifficulty,
-    _context: QuestGenerationContext
-  ): Omit<GeneratedQuest, 'categoryId' | 'difficulty' | 'points' | 'estimatedTime' | 'tags' | 'allowSharing' | 'encourageSharing'> {
-    const difficultyMultiplier = DIFFICULTY_MULTIPLIERS[difficulty];
-    
-    // Generate title with difficulty variation
-    let title = template.title;
-    if (difficulty === 'HARD') title = `Advanced ${title}`;
-    if (difficulty === 'EPIC') title = `Ultimate ${title}`;
-    
-    // Generate description
-    let description = template.baseDescription;
-    if (variation.action) description += ` by ${variation.action}`;
-    if (variation.location) description += ` at a ${variation.location}`;
-    if (variation.goal) description += `. Goal: ${variation.goal}`;
-    
-    // Add difficulty-specific requirements
-    const baseRequirements = [variation.goal || variation.action || 'Complete the task'];
-    let requirements = [...baseRequirements];
-    
-    if (difficulty === 'MEDIUM') {
-      requirements.push('Document your experience with photos or notes');
-    }
-    if (difficulty === 'HARD') {
-      requirements.push('Share your experience with someone');
-      requirements.push('Reflect on what you learned');
-    }
-    if (difficulty === 'EPIC') {
-      requirements.push('Create a detailed story about your experience');
-      requirements.push('Inspire someone else to try something similar');
-      requirements.push('Plan a follow-up activity');
-    }
-    
-    // Determine submission types
-    let submissionTypes: ('PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST')[] = ['TEXT'];
-    if (variation.location || template.template.includes('photo')) {
-      submissionTypes.push('PHOTO');
-    }
-    if (difficulty === 'HARD' || difficulty === 'EPIC') {
-      submissionTypes.push('VIDEO');
-    }
-    
-    // Location requirements
-    const locationRequired = Boolean(variation.location && variation.location !== 'anywhere');
-    const locationType = variation.location === 'outdoors' || variation.location === 'park' ? 'outdoor' : 
-                        variation.location === 'home' ? 'indoor' : undefined;
-    
-    return {
-      title,
-      description,
-      shortDescription: template.baseDescription,
-      instructions: this.generateInstructions(variation, difficulty),
-      requirements,
-      submissionTypes,
-      locationRequired,
-      ...(locationType && { locationType: locationType as 'indoor' | 'outdoor' | 'specific' }),
-      specificLocation: variation.specificLocation,
-      complexity: difficultyMultiplier.complexity,
-      socialAspect: template.template.includes('social') || difficulty === 'HARD' || difficulty === 'EPIC'
-    };
-  }
-  
-  /**
-   * Generate detailed instructions
-   */
-  private generateInstructions(variation: any, difficulty: QuestDifficulty): string {
-    let instructions = '';
-    
-    if (variation.materials) {
-      instructions += `Materials needed: ${variation.materials}. `;
-    }
-    
-    if (variation.duration) {
-      instructions += `Duration: ${variation.duration}. `;
-    }
-    
-    if (difficulty === 'HARD' || difficulty === 'EPIC') {
-      instructions += 'Take your time and focus on quality over speed. ';
-    }
-    
-    instructions += 'Remember to stay safe and have fun!';
-    
-    return instructions.trim();
-  }
-  
-  /**
-   * Generate fallback generic quest
-   */
-  private generateGenericQuest(categoryName: string, difficulty: QuestDifficulty): Omit<GeneratedQuest, 'categoryId' | 'difficulty' | 'points' | 'estimatedTime' | 'tags' | 'allowSharing' | 'encourageSharing'> {
-    const difficultyMultiplier = DIFFICULTY_MULTIPLIERS[difficulty];
-    
-    return {
-      title: `${categoryName} Challenge`,
-      description: `A ${difficulty.toLowerCase()} ${categoryName.toLowerCase()} quest to help you grow and explore.`,
-      shortDescription: `Explore ${categoryName.toLowerCase()} in a new way`,
-      requirements: ['Complete the assigned task', 'Document your experience'],
-      submissionTypes: ['TEXT', 'PHOTO'],
-      locationRequired: false,
-      complexity: difficultyMultiplier.complexity
-    };
-  }
-  
-  /**
-   * Calculate quest rewards
-   */
-  private calculateRewards(difficulty: QuestDifficulty, complexity: number): { points: number; estimatedTime: number } {
-    const multiplier = DIFFICULTY_MULTIPLIERS[difficulty];
-    const basePoints = 50;
-    const baseTime = 15; // minutes
-    
-    const points = Math.round(basePoints * multiplier.points * (1 + complexity * 0.5));
-    const estimatedTime = Math.round(baseTime * multiplier.time * (1 + complexity * 0.3));
-    
-    return { points, estimatedTime };
-  }
-  
-  /**
-   * Generate relevant tags
-   */
-  private generateTags(categoryName: string, difficulty: QuestDifficulty, context: QuestGenerationContext): string[] {
-    const tags = [categoryName.toLowerCase(), difficulty.toLowerCase()];
-    
-    if (context.weather?.condition) {
-      tags.push(context.weather.condition);
-    }
-    
-    if (context.timeOfDay) {
-      tags.push(context.timeOfDay);
-    }
-    
-    if (context.location?.city) {
-      tags.push('local');
-    }
-    
-    // Add contextual tags
-    if (difficulty === 'EASY') tags.push('beginner-friendly');
-    if (difficulty === 'EPIC') tags.push('challenge', 'achievement');
-    
-    return [...new Set(tags)]; // Remove duplicates
-  }
-  
-  /**
-   * Vary context for quest batch generation
-   */
-  private varyContext(baseContext: QuestGenerationContext, index: number): QuestGenerationContext {
-    const variations = { ...baseContext };
-    
-    // Vary difficulty
-    if (!variations.difficulty && index > 0) {
-      const difficulties: QuestDifficulty[] = ['EASY', 'MEDIUM', 'HARD'];
-      const selectedDifficulty = difficulties[index % difficulties.length];
-      if (selectedDifficulty) {
-        variations.difficulty = selectedDifficulty;
-      }
-    }
-    
-    // Clear category to allow variety
-    if (index > 2) {
-      delete variations.categoryId;
-    }
-    
-    return variations;
-  }
-  
-  /**
-   * Analyze user's favorite categories
-   */
-  private analyzeFavoriteCategories(submissions: any[]): string[] {
-    const categoryCount: { [key: string]: number } = {};
-    
-    submissions.forEach(submission => {
-      const categoryName = submission.quest?.category?.name;
-      if (categoryName) {
-        categoryCount[categoryName] = (categoryCount[categoryName] || 0) + 1;
-      }
-    });
-    
-    return Object.entries(categoryCount)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 3)
-      .map(([category]) => category);
-  }
-  
-  /**
-   * Calculate average completion time
-   */
-  private calculateAverageCompletionTime(submissions: any[]): number {
-    if (submissions.length === 0) return 30; // Default 30 minutes
-    
-    const times = submissions.map(s => s.quest?.estimatedTime || 30);
-    return times.reduce((sum, time) => sum + time, 0) / times.length;
-  }
-  
-  /**
-   * Get category information
-   */
-  private async getCategoryInfo(categoryId: string) {
-    const category = await prisma.questCategory.findUnique({
-      where: { id: categoryId }
-    });
-    
-    if (!category) {
-      throw new Error('Category not found');
-    }
-    
-    return category;
   }
 }
 
 export const aiQuestGenerator = new AIQuestGenerator();
-export type { QuestGenerationContext, GeneratedQuest };

@@ -14,7 +14,7 @@ import {
   Home,
   Sparkles
 } from "lucide-react";
-import { mockUser, mockBadges } from "@/lib/mock-data";
+import { mockUser } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import type { Quest } from "@/types";
 
@@ -67,7 +67,8 @@ export default function QuestSuccess() {
   const newStreak = mockUser.currentStreak + 1;
   
   // Check for badge unlock (simple logic)
-  const unlockedBadge = newStreak === 7 ? mockBadges.find(b => b.name === "Week Warrior") : null;
+  // Removed badge system for MVP
+  const unlockedBadge = null;
 
   const handleGenerateShareCard = () => {
     navigate(`/quest/${id}/share`, { state: { quest, submissionData } });

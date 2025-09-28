@@ -11,7 +11,6 @@ router.use(authenticate);
 // AI Quest Generation Routes
 router.post('/generate', defaultLimiter, aiQuestController.generateQuest);
 router.post('/save', defaultLimiter, aiQuestController.saveGeneratedQuest);
-router.post('/from-idea', defaultLimiter, aiQuestController.generateQuestFromIdea);
 
 // AI Quest Analytics and Personalization
 router.get('/stats', aiQuestController.getGenerationStats);

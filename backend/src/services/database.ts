@@ -86,24 +86,21 @@ export class DatabaseService {
     users: number;
     quests: number;
     submissions: number;
-    badges: number;
-    challenges: number;
+    categories: number;
   }> {
     try {
-      const [users, quests, submissions, badges, challenges] = await Promise.all([
+      const [users, quests, submissions, categories] = await Promise.all([
         this.client.user.count(),
         this.client.quest.count(),
         this.client.submission.count(),
-        this.client.badge.count(),
-        this.client.challenge.count(),
+        this.client.questCategory.count(),
       ]);
 
       return {
         users,
         quests,
         submissions,
-        badges,
-        challenges,
+        categories,
       };
     } catch (error) {
       console.error('❌ Failed to get database stats:', error);
@@ -130,47 +127,6 @@ export class DatabaseService {
 
       });
 
-      // Create some basic badges
-      const badges = await this.client.badge.createMany({
-        data: [
-          {
-            name: 'First Quest',
-            description: 'Complete your very first quest',
-            icon: '🏆',
-            type: 'COMPLETION',
-            rarity: 'COMMON',
-          },
-          {
-            name: 'Week Warrior',
-            description: 'Complete quests for 7 days straight',
-            icon: '🔥',
-            type: 'STREAK',
-            rarity: 'RARE',
-          },
-          {
-            name: 'Social Butterfly',
-            description: 'Share 10 quest completions',
-            icon: '🦋',
-            type: 'SOCIAL',
-            rarity: 'EPIC',
-          },
-          {
-            name: 'Legend',
-            description: 'Reach level 50',
-            icon: '👑',
-            type: 'SPECIAL',
-            rarity: 'LEGENDARY',
-          },
-          {
-            name: 'Kindness Champion',
-            description: 'Complete 25 kindness quests',
-            icon: '💝',
-            type: 'COMPLETION',
-            rarity: 'EPIC',
-          },
-        ],
-
-      });
 
       // Get the first category for sample quests
       const kindnessCategory = await this.client.questCategory.findFirst({
@@ -193,13 +149,11 @@ export class DatabaseService {
               difficulty: 'EASY',
               tags: JSON.stringify(['social', 'kindness', 'local']),
               requirements: JSON.stringify(['Visit a coffee shop', 'Give a genuine compliment', 'Take a photo of your drink']),
-              points: 100,
               estimatedTime: 15,
               submissionTypes: JSON.stringify(['PHOTO', 'TEXT']),
               status: 'AVAILABLE',
               isFeatured: true,
               allowSharing: true,
-              encourageSharing: true,
             },
             {
               title: 'Stair Master',
@@ -209,7 +163,6 @@ export class DatabaseService {
               difficulty: 'EASY',
               tags: JSON.stringify(['fitness', 'daily', 'simple']),
               requirements: JSON.stringify(['Choose stairs over elevators', 'Count flights climbed', 'Complete for one full day']),
-              points: 75,
               estimatedTime: 0,
               submissionTypes: JSON.stringify(['TEXT']),
               status: 'AVAILABLE',
@@ -222,7 +175,6 @@ export class DatabaseService {
 
       console.log('✅ Database seeding completed');
       console.log(`   • Categories created: ${categories.count}`);
-      console.log(`   • Badges created: ${badges.count}`);
       console.log('   • Sample quests created');
       
     } catch (error) {

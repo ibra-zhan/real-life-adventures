@@ -29,11 +29,16 @@ const questApi = {
   },
 
   async getFeaturedQuest(): Promise<Quest> {
-    const response = await apiClient.getFeaturedQuest();
+    const response = await apiClient.getFeaturedQuests();
     if (!response.success) {
       throw new Error(response.error?.message || 'No featured quest found');
     }
-    return transformQuest(response.data);
+    const featuredQuests = response.data;
+    if (!featuredQuests || featuredQuests.length === 0) {
+      throw new Error('No featured quest found');
+    }
+    // Return the first featured quest
+    return transformQuest(featuredQuests[0]);
   },
 
   async getRandomQuest(): Promise<Quest> {

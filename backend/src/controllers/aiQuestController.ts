@@ -1,32 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '@/services/database';
-import { aiQuestGenerator, type QuestGenerationContext } from '@/services/aiQuestGenerator';
+import { aiQuestGenerator, type QuestGenerationInput } from '@/services/aiQuestGenerator';
 import type { ApiResponse } from '@/types';
 import { ValidationError, AuthenticationError } from '@/middleware/errorHandler';
 
 // Validation schemas
 const generateQuestSchema = z.object({
-  categoryId: z.string().cuid().optional(),
-  difficulty: z.enum(['EASY', 'MEDIUM', 'HARD', 'EPIC']).optional(),
+  mode: z.enum(['quick', 'custom']).default('quick'),
+  difficulty: z.enum(['easy', 'medium', 'hard', 'epic']).default('easy'),
+  category: z.enum(['fitness', 'learning']).optional(),
   count: z.number().min(1).max(10).default(1),
-  location: z.object({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    city: z.string().optional(),
-    country: z.string().optional(),
-  }).optional(),
-  weather: z.object({
-    temperature: z.number(),
-    condition: z.string(),
-    season: z.string(),
-  }).optional(),
-  timeOfDay: z.enum(['morning', 'afternoon', 'evening', 'night']).optional(),
-  preferences: z.object({
-    interests: z.array(z.string()).optional(),
-    preferredDifficulties: z.array(z.enum(['EASY', 'MEDIUM', 'HARD', 'EPIC'])).optional(),
-    preferredCategories: z.array(z.string()).optional(),
-  }).optional(),
 });
 
 const saveGeneratedQuestSchema = z.object({
@@ -36,7 +20,7 @@ const saveGeneratedQuestSchema = z.object({
     shortDescription: z.string().min(5).max(200),
     instructions: z.string().max(1000).optional(),
     categoryId: z.string().cuid(),
-    difficulty: z.enum(['EASY', 'MEDIUM', 'HARD', 'EPIC']),
+    difficulty: z.enum(['easy', 'medium', 'hard', 'epic']),
     tags: z.array(z.string()).max(10),
     requirements: z.array(z.string()).min(1).max(10),
     points: z.number().min(10).max(10000),
@@ -52,14 +36,6 @@ const saveGeneratedQuestSchema = z.object({
   autoPublish: z.boolean().default(false),
 });
 
-const questIdeaSchema = z.object({
-  theme: z.string().min(3).max(50),
-  description: z.string().min(10).max(500),
-  categoryPreference: z.string().optional(),
-  difficultyPreference: z.enum(['EASY', 'MEDIUM', 'HARD', 'EPIC']).optional(),
-  includeLocation: z.boolean().default(false),
-  targetAudience: z.enum(['beginners', 'intermediate', 'advanced', 'everyone']).default('everyone'),
-});
 
 // Controllers
 export const generateQuest = async (req: Request, res: Response, next: NextFunction) => {
@@ -72,24 +48,21 @@ export const generateQuest = async (req: Request, res: Response, next: NextFunct
     
     const validatedData = generateQuestSchema.parse(req.body);
     
-    // Build generation context
-    const context: QuestGenerationContext = {
+    // Build generation input
+    const input: QuestGenerationInput = {
+      mode: validatedData.mode,
+      difficulty: validatedData.difficulty,
+      ...(validatedData.category && { category: validatedData.category }),
       userId,
-      ...(validatedData.categoryId && { categoryId: validatedData.categoryId }),
-      ...(validatedData.difficulty && { difficulty: validatedData.difficulty }),
-      ...(validatedData.location && { location: validatedData.location }),
-      ...(validatedData.weather && { weather: validatedData.weather }),
-      ...(validatedData.timeOfDay && { timeOfDay: validatedData.timeOfDay }),
-      ...(validatedData.preferences && { userPreferences: validatedData.preferences }),
     };
     
     // Generate quest(s)
     let generatedQuests;
     if (validatedData.count === 1) {
-      const quest = await aiQuestGenerator.generateQuest(context);
+      const quest = await aiQuestGenerator.generateQuest(input);
       generatedQuests = [quest];
     } else {
-      generatedQuests = await aiQuestGenerator.generateQuestBatch(context, validatedData.count);
+      generatedQuests = await aiQuestGenerator.generateQuestBatch(input, validatedData.count);
     }
     
     // Add generation metadata
@@ -98,11 +71,9 @@ export const generateQuest = async (req: Request, res: Response, next: NextFunct
       generatedAt: new Date().toISOString(),
       generationContext: {
         userId,
-        categoryRequested: validatedData.categoryId,
+        mode: validatedData.mode,
         difficultyRequested: validatedData.difficulty,
-        hasLocation: Boolean(validatedData.location),
-        hasWeather: Boolean(validatedData.weather),
-        timeOfDay: validatedData.timeOfDay,
+        categoryRequested: validatedData.category,
       }
     }));
     
@@ -159,22 +130,19 @@ export const saveGeneratedQuest = async (req: Request, res: Response, next: Next
         shortDescription: questData.shortDescription,
         instructions: questData.instructions || null,
         categoryId: questData.categoryId,
-        difficulty: questData.difficulty,
+        difficulty: questData.difficulty.toUpperCase() as any,
         tags: JSON.stringify(questData.tags),
         requirements: JSON.stringify(questData.requirements),
-        points: questData.points,
         estimatedTime: questData.estimatedTime,
         submissionTypes: JSON.stringify(questData.submissionTypes),
         locationRequired: questData.locationRequired,
         locationType: questData.locationType || null,
         specificLocation: questData.specificLocation || null,
         allowSharing: questData.allowSharing,
-        encourageSharing: questData.encourageSharing,
         imageUrl: questData.imageUrl || null,
         createdBy: userId,
         status: status as any,
         // Mark as AI-generated
-        isEpic: questData.difficulty === 'EPIC',
         isFeatured: false, // Can be promoted later
       },
       include: {
@@ -212,86 +180,6 @@ export const saveGeneratedQuest = async (req: Request, res: Response, next: Next
   }
 };
 
-export const generateQuestFromIdea = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const userId = (req as any).user?.id;
-    
-    if (!userId) {
-      throw new AuthenticationError('User not authenticated');
-    }
-    
-    const validatedData = questIdeaSchema.parse(req.body);
-    
-    // Find suitable category
-    let categoryId = validatedData.categoryPreference;
-    if (!categoryId) {
-      // Try to match theme to category
-      const categories = await prisma.questCategory.findMany({
-        where: { isActive: true }
-      });
-      
-      const theme = validatedData.theme.toLowerCase();
-      const matchingCategory = categories.find(cat => 
-        theme.includes(cat.name.toLowerCase()) || 
-        validatedData.description.toLowerCase().includes(cat.name.toLowerCase())
-      );
-      
-      categoryId = matchingCategory?.id || categories[0]?.id || '';
-    }
-    
-    // Build generation context with user's idea
-    const context: QuestGenerationContext = {
-      userId,
-      categoryId,
-      ...(validatedData.difficultyPreference && { difficulty: validatedData.difficultyPreference }),
-    };
-    
-    // Generate quest based on the idea
-    const baseQuest = await aiQuestGenerator.generateQuest(context);
-    
-    // Customize with user's idea
-    const customizedQuest = {
-      ...baseQuest,
-      title: enhanceTitle(baseQuest.title, validatedData.theme),
-      description: enhanceDescription(baseQuest.description, validatedData.description, validatedData.theme),
-      shortDescription: validatedData.theme,
-      locationRequired: validatedData.includeLocation || baseQuest.locationRequired,
-    };
-    
-    // Adjust difficulty based on target audience
-    if (validatedData.targetAudience === 'beginners' && customizedQuest.difficulty !== 'EASY') {
-      customizedQuest.difficulty = 'EASY';
-      customizedQuest.points = Math.round(customizedQuest.points * 0.7);
-    } else if (validatedData.targetAudience === 'advanced' && customizedQuest.difficulty === 'EASY') {
-      customizedQuest.difficulty = 'MEDIUM';
-      customizedQuest.points = Math.round(customizedQuest.points * 1.5);
-    }
-    
-    const questWithMetadata = {
-      ...customizedQuest,
-      generatedAt: new Date().toISOString(),
-      basedOnUserIdea: true,
-      originalIdea: {
-        theme: validatedData.theme,
-        description: validatedData.description,
-        targetAudience: validatedData.targetAudience,
-      }
-    };
-    
-    const response: ApiResponse<typeof questWithMetadata> = {
-      success: true,
-      data: questWithMetadata,
-      timestamp: new Date().toISOString(),
-    };
-    
-    res.json(response);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw new ValidationError(`Validation failed: ${error.issues.map(i => i.message).join(', ')}`);
-    }
-    next(error);
-  }
-};
 
 export const getGenerationStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -426,7 +314,7 @@ export const getPersonalizedSuggestions = async (req: Request, res: Response, ne
       nextDifficultyLevel: suggestNextDifficulty(user.submissions),
       basedOnRecentActivity: await suggestBasedOnActivity(user.submissions),
       seasonalSuggestions: generateSeasonalSuggestions(),
-      streakMaintenance: generateStreakSuggestions(user.currentStreak),
+      streakMaintenance: generateStreakSuggestions(0),
     };
     
     const response: ApiResponse<typeof suggestions> = {
@@ -441,17 +329,7 @@ export const getPersonalizedSuggestions = async (req: Request, res: Response, ne
   }
 };
 
-// Helper methods (these would be part of the class if this were a class-based approach)
-const enhanceTitle = (baseTitle: string, theme: string): string => {
-  if (baseTitle.toLowerCase().includes(theme.toLowerCase())) {
-    return baseTitle;
-  }
-  return `${theme}: ${baseTitle}`;
-};
-
-const enhanceDescription = (baseDescription: string, userDescription: string, _theme: string): string => {
-  return `${userDescription} ${baseDescription}`.trim();
-};
+// Helper methods removed - now using AI for quest generation
 
 const generateRecommendations = (userQuests: any[], completedSubmissions: number, _categories: any[]) => {
   const recommendations = [];

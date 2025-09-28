@@ -270,17 +270,13 @@ export const createQuest = async (req: Request, res: Response) => {
         difficulty: validatedData.difficulty,
         tags: JSON.stringify(validatedData.tags),
         requirements: JSON.stringify(validatedData.requirements),
-        points: validatedData.points,
         estimatedTime: validatedData.estimatedTime,
         submissionTypes: JSON.stringify(validatedData.submissionTypes),
         locationRequired: validatedData.locationRequired,
         locationType: validatedData.locationType || null,
         specificLocation: validatedData.specificLocation || null,
         allowSharing: validatedData.allowSharing,
-        encourageSharing: validatedData.encourageSharing,
         imageUrl: validatedData.imageUrl || null,
-        videoUrl: validatedData.videoUrl || null,
-        expiresAt: validatedData.expiresAt ? new Date(validatedData.expiresAt) : null,
         createdBy: userId,
         status: 'DRAFT', // User-created quests start as drafts
       },
@@ -567,7 +563,6 @@ export const submitQuest = async (req: Request, res: Response) => {
           select: {
             id: true,
             title: true,
-            points: true,
           }
         },
         user: {
@@ -631,30 +626,6 @@ export const getQuestSubmissions = async (req: Request, res: Response) => {
             avatar: true,
           }
         },
-        likes: {
-          select: {
-            id: true,
-            userId: true,
-          }
-        },
-        comments: {
-          select: {
-            id: true,
-            content: true,
-            createdAt: true,
-            user: {
-              select: {
-                id: true,
-                username: true,
-                avatar: true,
-              }
-            }
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 3, // Latest 3 comments
-        }
       },
       orderBy: {
         submittedAt: 'desc',

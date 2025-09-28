@@ -244,3 +244,55 @@
     @apply mx-2;
   }
 }
+
+/* Narrow mobile optimizations */
+@media (max-width: 384px) {
+  .quest-card {
+    @apply mx-1;
+  }
+
+  /* Compact mobile spacing */
+  .mobile-compact {
+    @apply px-2 py-1;
+  }
+
+  /* Hide scrollbars on mobile */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Ensure touch targets are large enough */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Ultra-narrow mobile (320px and below) */
+@media (max-width: 320px) {
+  .ultra-narrow {
+    @apply text-xs px-1;
+  }
+
+  .ultra-narrow .btn-quest {
+    @apply px-4 py-2;
+  }
+}
+
+/* Utility classes for mobile optimization */
+.mobile-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.mobile-text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

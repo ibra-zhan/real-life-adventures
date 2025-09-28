@@ -7,7 +7,8 @@ dotenv.config();
 // Environment validation schema
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.string().transform(Number).default('3001'),
+  PORT: z.string().transform(Number).default(3001),
+  HOST: z.string().default('localhost'),
   
   // Database
   DATABASE_URL: z.string().default('file:./dev.db'),
@@ -20,13 +21,14 @@ const envSchema = z.object({
   
   // CORS
   CORS_ORIGIN: z.string().default('http://localhost:8080'),
+  CORS_CREDENTIALS: z.string().transform(val => val === 'true').default(true),
   
   // Rate limiting
-  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('900000'), // 15 minutes
-  RATE_LIMIT_MAX: z.string().transform(Number).default('100'),
+  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default(900000), // 15 minutes
+  RATE_LIMIT_MAX: z.string().transform(Number).default(100),
   
   // File upload
-  MAX_FILE_SIZE: z.string().transform(Number).default('10485760'), // 10MB
+  MAX_FILE_SIZE: z.string().transform(Number).default(10485760), // 10MB
   UPLOAD_DIR: z.string().default('./uploads'),
   
   // Email (optional)
@@ -44,6 +46,9 @@ const envSchema = z.object({
   
   // OpenAI (optional)
   OPENAI_API_KEY: z.string().optional(),
+
+  // Gemini (optional)
+  GEMINI_API_KEY: z.string().optional(),
   
   // Google Cloud (optional)
   GOOGLE_CLOUD_PROJECT_ID: z.string().optional(),
@@ -55,11 +60,17 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().optional(),
   
   // Feature flags
-  ENABLE_AI_QUESTS: z.string().transform(val => val === 'true').default('true'),
-  ENABLE_MEDIA_UPLOAD: z.string().transform(val => val === 'true').default('true'),
-  ENABLE_NOTIFICATIONS: z.string().transform(val => val === 'true').default('true'),
-  ENABLE_MODERATION: z.string().transform(val => val === 'true').default('true'),
-  ENABLE_GAMIFICATION: z.string().transform(val => val === 'true').default('true'),
+  ENABLE_AI_QUESTS: z.string().transform(val => val === 'true').default(true),
+  ENABLE_MEDIA_UPLOAD: z.string().transform(val => val === 'true').default(true),
+  ENABLE_NOTIFICATIONS: z.string().transform(val => val === 'true').default(true),
+  ENABLE_MODERATION: z.string().transform(val => val === 'true').default(true),
+  ENABLE_GAMIFICATION: z.string().transform(val => val === 'true').default(true),
+  
+  // Development
+  DEBUG_MODE: z.string().transform(val => val === 'true').default(true),
+  
+  // Server
+  BASE_URL: z.string().default('http://localhost:3001'),
 });
 
 // Parse and validate environment variables
@@ -67,8 +78,16 @@ const env = envSchema.parse(process.env);
 
 // Export configuration
 export const config = {
-  env: env.NODE_ENV,
-  port: env.PORT,
+  server: {
+    nodeEnv: env.NODE_ENV,
+    host: env.HOST,
+    port: env.PORT,
+    baseUrl: env.BASE_URL,
+  },
+  
+  development: {
+    debugMode: env.DEBUG_MODE,
+  },
   
   database: {
     url: env.DATABASE_URL,
@@ -78,16 +97,20 @@ export const config = {
     secret: env.JWT_SECRET,
     refreshSecret: env.JWT_REFRESH_SECRET,
     expiresIn: env.JWT_EXPIRES_IN,
+    expireTime: env.JWT_EXPIRES_IN, // Alias for compatibility
     refreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
+    refreshExpireTime: env.JWT_REFRESH_EXPIRES_IN, // Alias for compatibility
   },
   
   cors: {
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGIN.split(',').map(origin => origin.trim()),
+    credentials: env.CORS_CREDENTIALS,
   },
   
   rateLimit: {
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX,
+    maxRequests: env.RATE_LIMIT_MAX, // Alias for compatibility
   },
   
   upload: {
@@ -112,6 +135,10 @@ export const config = {
   
   openai: {
     apiKey: env.OPENAI_API_KEY,
+  },
+
+  gemini: {
+    apiKey: env.GEMINI_API_KEY,
   },
   
   googleCloud: {

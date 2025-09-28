@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
-import type { User, Quest, Badge } from '@/types';
+import type { User, Quest } from '@/types';
 import { mockUser } from '@/lib/mock-data';
-import { calculateQuestRewards, updateUserWithQuestCompletion } from '@/lib/progression';
+import { updateUserWithQuestCompletion } from '@/lib/progression';
 import { useAuthContext } from './AuthContext';
 
 // Actions
@@ -19,7 +19,6 @@ interface UserState {
   optimisticUpdates: {
     questId?: string;
     previousUser?: User;
-    rewards?: ReturnType<typeof calculateQuestRewards>;
   };
   isLoading: boolean;
 }
@@ -40,7 +39,6 @@ function userReducer(state: UserState, action: UserAction): UserState {
   switch (action.type) {
     case 'QUEST_COMPLETED_OPTIMISTIC': {
       const { quest } = action.payload;
-      const rewards = calculateQuestRewards(quest, state.user);
       const updatedUser = updateUserWithQuestCompletion(state.user, quest);
       
       return {
@@ -48,7 +46,6 @@ function userReducer(state: UserState, action: UserAction): UserState {
         optimisticUpdates: {
           questId: quest.id,
           previousUser: state.user,
-          rewards
         },
         user: updatedUser,
         isLoading: true
@@ -110,22 +107,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // Sync with authentication state
   useEffect(() => {
     if (isAuthenticated && authUser) {
+      const persistedOnboarding = localStorage.getItem('onboardingCompleted');
+      const onboardingCompleted = (authUser as any).onboardingCompleted ?? (persistedOnboarding === 'true');
+      localStorage.setItem('onboardingCompleted', onboardingCompleted ? 'true' : 'false');
+
       // Convert backend user to frontend user format
-      const frontendUser: User = {
+      // Backend User has different structure than frontend User
+      const frontendUser: Partial<User> = {
         id: authUser.id,
         username: authUser.username,
         email: authUser.email,
-        avatar: authUser.avatar || undefined,
-        level: authUser.level || 1,
-        xp: authUser.xp || 0,
-        totalPoints: authUser.totalPoints || 0,
-        currentStreak: authUser.currentStreak || 0,
-        longestStreak: authUser.longestStreak || 0,
-        badges: [], // Will be loaded separately
-        joinedAt: authUser.createdAt || new Date().toISOString(),
-        location: authUser.location || undefined,
+        emailVerified: (authUser as any).emailVerified || false,
+        avatar: authUser.avatar,
+        firstName: (authUser as any).firstName,
+        lastName: (authUser as any).lastName,
+        bio: (authUser as any).bio,
+        joinedAt: (authUser as any).joinedAt || (authUser as any).createdAt || new Date().toISOString(),
+        location: authUser.location,
+        createdAt: (authUser as any).createdAt,
+        onboardingCompleted,
+        preferredCategories: (authUser as any).preferredCategories,
+        defaultPrivacy: (authUser as any).defaultPrivacy,
       };
-      
+
       dispatch({ type: 'UPDATE_USER', payload: frontendUser });
     } else if (!isAuthenticated && !authLoading) {
       // Reset to mock user when not authenticated
@@ -137,30 +141,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     // Apply optimistic update immediately
     dispatch({ type: 'QUEST_COMPLETED_OPTIMISTIC', payload: { quest } });
     
-    // Show optimistic feedback
-    const rewards = calculateQuestRewards(quest, state.user);
-    
-    // Show XP gained toast
-    toast.success(`+${rewards.totalXP} XP earned!`, {
-      description: rewards.levelUp ? `Level up! You're now level ${rewards.newLevel}` : undefined,
+    // Show success toast for MVP
+    toast.success(`Quest completed!`, {
+      description: `"${quest.title}" has been completed successfully!`,
       duration: 3000,
     });
     
-    // Show streak toast
-    if (rewards.newStreak > 1) {
-      toast.success(`🔥 ${rewards.newStreak} day streak!`, {
-        description: rewards.streakBonus ? "Streak bonus XP earned!" : undefined,
-        duration: 2000,
-      });
-    }
-    
-    // Show badge unlock toasts
-    rewards.unlockedBadges.forEach((badge) => {
-      toast.success(`🏆 Badge Unlocked: ${badge.name}!`, {
-        description: badge.description,
-        duration: 4000,
-      });
-    });
+    // Badge system removed for MVP
 
     try {
       // Simulate API call with random failure

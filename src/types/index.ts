@@ -1,35 +1,30 @@
-// SideQuest Core Data Models
-
-// Media types
-export * from './media';
+// Real Life Adventures MVP - Core Data Models
 
 // Notification types
-export * from './notification';
+// Removed notification import to avoid conflicts with simplified MVP version
 
-// Moderation types
-export * from './moderation';
-
-// Gamification types
-export * from './gamification';
+// MVP types - simplified
 
 export type QuestDifficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'EPIC';
 export type QuestStatus = 'AVAILABLE' | 'ACTIVE' | 'COMPLETED' | 'EXPIRED';
 export type SubmissionType = 'PHOTO' | 'VIDEO' | 'TEXT' | 'CHECKLIST';
-export type BadgeType = 'streak' | 'completion' | 'social' | 'special';
+// Removed BadgeType for MVP
 
 export interface User {
   id: string;
   username: string;
   email: string;
+  emailVerified?: boolean;
   avatar?: string;
-  level: number;
-  xp: number;
-  totalPoints: number;
-  currentStreak: number;
-  longestStreak: number;
-  badges: Badge[];
+  firstName?: string;
+  lastName?: string;
+  bio?: string;
   joinedAt: string;
   location?: string;
+  onboardingCompleted?: boolean;
+  preferredCategories?: string[];
+  defaultPrivacy?: 'public' | 'friends' | 'private';
+  createdAt?: string;
 }
 
 export interface Quest {
@@ -97,62 +92,7 @@ export interface Submission {
   approved?: boolean;
 }
 
-export interface Badge {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  type: BadgeType;
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  unlockedAt?: string;
-  progress?: {
-    current: number;
-    required: number;
-  };
-}
-
-export interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  theme: string;
-  startDate: string;
-  endDate: string;
-  participants: number;
-  maxParticipants?: number;
-  quests: Quest[];
-  rewards: Badge[];
-  leaderboard: LeaderboardEntry[];
-  isJoined: boolean;
-}
-
-export interface LeaderboardEntry {
-  userId: string;
-  username: string;
-  avatar?: string;
-  points: number;
-  streak: number;
-  completedQuests: number;
-  rank: number;
-}
-
-export interface ShareAssetSpec {
-  format: '1:1' | '9:16' | '16:9';
-  quest: Quest;
-  user: User;
-  submission: Submission;
-  badge?: Badge;
-  template: 'minimal' | 'achievement' | 'streak';
-}
-
-export interface FeatureFlags {
-  enablePremiumQuests: boolean;
-  enableSocialSharing: boolean;
-  enableLocationQuests: boolean;
-  enableChallenges: boolean;
-  enableLeaderboards: boolean;
-  debugMode: boolean;
-}
+// Removed Badge interface for MVP
 
 export interface Notification {
   id: string;
@@ -170,18 +110,4 @@ export interface QuestFeedResponse {
   personalizedQuests: Quest[];
   communityQuests: Quest[];
   hasMore: boolean;
-}
-
-export interface UserStatsResponse {
-  user: User;
-  recentBadges: Badge[];
-  weeklyProgress: {
-    completed: number;
-    target: number;
-  };
-  streakData: {
-    current: number;
-    longest: number;
-    lastCompletedAt?: string;
-  };
 }

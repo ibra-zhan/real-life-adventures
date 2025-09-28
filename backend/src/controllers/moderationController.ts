@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { aiModerationService } from '../services/aiModerationService';
 
 export const moderationController = {
   getModerationHealth: async (_req: Request, res: Response) => {
@@ -23,15 +24,35 @@ export const moderationController = {
     }
   },
 
-  moderateContent: async (_req: Request, res: Response) => {
+  moderateContent: async (req: Request, res: Response): Promise<void> => {
     try {
+      const { content, contentType, metadata } = req.body;
+      
+      if (!content) {
+        res.status(400).json({
+          success: false,
+          error: { message: 'Content is required' }
+        });
+        return;
+      }
+
+      const result = await aiModerationService.moderateContent({
+        content,
+        contentType: contentType || 'text',
+        userId: (req as any).user?.id,
+        metadata
+      });
+
       res.json({
         success: true,
         data: {
-          contentId: 'mock-content-id',
-          status: 'approved',
-          confidence: 0.95,
-          flags: [],
+          contentId: `content-${Date.now()}`,
+          isApproved: result.isApproved,
+          confidence: result.confidence,
+          flags: result.flags,
+          reason: result.reason,
+          suggestedAction: result.suggestedAction,
+          editedContent: result.editedContent,
           timestamp: new Date().toISOString()
         }
       });

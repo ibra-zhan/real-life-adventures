@@ -9,13 +9,12 @@ import {
   Sparkles, 
   Target, 
   BarChart3, 
-  Lightbulb,
   Clock,
   Zap,
   TrendingUp
 } from 'lucide-react';
 import { QuestGenerator } from '@/components/QuestGenerator';
-import { useGenerationStats, usePersonalizedSuggestions } from '@/hooks/useAIQuests';
+import { useGenerationStats } from '@/hooks/useAIQuests';
 import { useQuests } from '@/hooks/useQuests';
 import type { Quest } from '@/types';
 
@@ -23,83 +22,82 @@ export default function AIQuests() {
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
   
   const { data: stats, isLoading: statsLoading } = useGenerationStats();
-  const { data: suggestions, isLoading: suggestionsLoading } = usePersonalizedSuggestions();
   const { data: recentQuests, isLoading: questsLoading } = useQuests({ limit: 5, sortBy: 'createdAt' });
 
-  const handleQuestGenerated = (quest: Quest) => {
-    setSelectedQuest(quest);
+  const handleQuestGenerated = (_quest: Quest) => {
+    setSelectedQuest(_quest);
   };
 
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-40 glass-effect border-b border-border px-4 py-3">
-        <div className="flex items-center gap-3 max-w-4xl mx-auto">
-          <div className="flex items-center gap-2">
-            <Wand2 className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-bold">AI Quest Generator</h1>
+      <header className="sticky top-0 z-40 glass-effect border-b border-border px-3 py-2">
+        <div className="flex items-center gap-2 w-full">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Wand2 className="w-5 h-5 text-primary shrink-0" />
+            <h1 className="text-lg font-bold truncate">AI Quests</h1>
           </div>
-          <Badge variant="secondary" className="ml-auto">
+          <Badge variant="secondary" className="shrink-0 text-xs">
             <Sparkles className="w-3 h-3 mr-1" />
-            Powered by AI
+            AI
           </Badge>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <div className="w-full px-3 py-4 space-y-4">
         {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-2">
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" />
-                <div>
-                  <div className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="h-6 w-8" /> : stats?.totalGenerated || 0}
+                <Zap className="w-4 h-4 text-primary shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-lg font-bold">
+                    {statsLoading ? <Skeleton className="h-5 w-6" /> : stats?.totalGenerated || 0}
                   </div>
-                  <div className="text-xs text-muted-foreground">Quests Generated</div>
+                  <div className="text-xs text-muted-foreground truncate">Generated</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-green-500" />
-                <div>
-                  <div className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="h-6 w-8" /> : stats?.successRate || 0}%
+                <Target className="w-4 h-4 text-green-500 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-lg font-bold">
+                    {statsLoading ? <Skeleton className="h-5 w-6" /> : stats?.successRate || 0}%
                   </div>
-                  <div className="text-xs text-muted-foreground">Success Rate</div>
+                  <div className="text-xs text-muted-foreground truncate">Success</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-500" />
-                <div>
-                  <div className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="h-6 w-8" /> : stats?.avgGenerationTime || 0}s
+                <Clock className="w-4 h-4 text-blue-500 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-lg font-bold">
+                    {statsLoading ? <Skeleton className="h-5 w-6" /> : stats?.avgGenerationTime || 0}s
                   </div>
-                  <div className="text-xs text-muted-foreground">Avg. Time</div>
+                  <div className="text-xs text-muted-foreground truncate">Avg Time</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-3">
               <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-500" />
-                <div>
-                  <div className="text-2xl font-bold">
-                    {statsLoading ? <Skeleton className="h-6 w-8" /> : stats?.popularCategory || 'N/A'}
+                <TrendingUp className="w-4 h-4 text-purple-500 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-lg font-bold truncate">
+                    {statsLoading ? <Skeleton className="h-5 w-8" /> : stats?.popularCategory || 'N/A'}
                   </div>
-                  <div className="text-xs text-muted-foreground">Top Category</div>
+                  <div className="text-xs text-muted-foreground truncate">Top</div>
                 </div>
               </div>
             </CardContent>
@@ -107,75 +105,25 @@ export default function AIQuests() {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="generate" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="generate" className="flex items-center gap-2">
+        <Tabs defaultValue="generate" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="generate" className="flex items-center gap-2 text-sm">
               <Wand2 className="w-4 h-4" />
               Generate
             </TabsTrigger>
-            <TabsTrigger value="suggestions" className="flex items-center gap-2">
-              <Lightbulb className="w-4 h-4" />
-              Suggestions
-            </TabsTrigger>
-            <TabsTrigger value="recent" className="flex items-center gap-2">
+            <TabsTrigger value="recent" className="flex items-center gap-2 text-sm">
               <BarChart3 className="w-4 h-4" />
               Recent
             </TabsTrigger>
           </TabsList>
 
           {/* Generate Tab */}
-          <TabsContent value="generate" className="space-y-6">
+          <TabsContent value="generate" className="space-y-4">
             <QuestGenerator onQuestGenerated={handleQuestGenerated} />
           </TabsContent>
 
-          {/* Suggestions Tab */}
-          <TabsContent value="suggestions" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Lightbulb className="w-5 h-5" />
-                  Personalized Suggestions
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  AI-powered quest ideas based on your preferences and activity
-                </p>
-              </CardHeader>
-              <CardContent>
-                {suggestionsLoading ? (
-                  <div className="space-y-4">
-                    {[...Array(3)].map((_, i) => (
-                      <Skeleton key={i} className="h-20 w-full" />
-                    ))}
-                  </div>
-                ) : suggestions?.length > 0 ? (
-                  <div className="space-y-4">
-                    {suggestions.map((suggestion: any, index: number) => (
-                      <Card key={index} className="p-4">
-                        <div className="space-y-2">
-                          <h4 className="font-medium">{suggestion.title}</h4>
-                          <p className="text-sm text-muted-foreground">{suggestion.description}</p>
-                          <div className="flex gap-2">
-                            <Badge variant="outline">{suggestion.difficulty}</Badge>
-                            <Badge variant="secondary">{suggestion.category}</Badge>
-                            <Badge variant="outline">{suggestion.estimatedTime}min</Badge>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Lightbulb className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No suggestions available yet.</p>
-                    <p className="text-sm">Complete some quests to get personalized recommendations!</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* Recent Tab */}
-          <TabsContent value="recent" className="space-y-6">
+          <TabsContent value="recent" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

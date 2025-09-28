@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import type { User, Quest, Badge, Notification, ModerationResult } from '@/types';
+import type { User, Quest, Notification, ModerationResult } from '@/types';
 
 // State interfaces
 interface AppState {
   user: User | null;
   quests: Quest[];
-  badges: Badge[];
+  // Removed badges for MVP
   notifications: Notification[];
   moderationQueue: ModerationResult[];
   isLoading: boolean;
@@ -24,8 +24,7 @@ type AppStateAction =
   | { type: 'ADD_QUEST'; payload: Quest }
   | { type: 'UPDATE_QUEST'; payload: Quest }
   | { type: 'REMOVE_QUEST'; payload: string }
-  | { type: 'SET_BADGES'; payload: Badge[] }
-  | { type: 'ADD_BADGE'; payload: Badge }
+  // Removed badge actions for MVP
   | { type: 'SET_NOTIFICATIONS'; payload: Notification[] }
   | { type: 'ADD_NOTIFICATION'; payload: Notification }
   | { type: 'UPDATE_NOTIFICATION'; payload: Notification }
@@ -40,7 +39,7 @@ type AppStateAction =
 const initialState: AppState = {
   user: null,
   quests: [],
-  badges: [],
+    // Removed badges for MVP
   notifications: [],
   moderationQueue: [],
   isLoading: false,
@@ -80,11 +79,7 @@ function appStateReducer(state: AppState, action: AppStateAction): AppState {
         quests: state.quests.filter(quest => quest.id !== action.payload),
       };
     
-    case 'SET_BADGES':
-      return { ...state, badges: action.payload, error: null };
-    
-    case 'ADD_BADGE':
-      return { ...state, badges: [...state.badges, action.payload] };
+    // Removed badge cases for MVP
     
     case 'SET_NOTIFICATIONS':
       return { ...state, notifications: action.payload, error: null };
@@ -141,7 +136,7 @@ interface AppStateContextType {
   // Actions
   refreshUser: () => Promise<void>;
   refreshQuests: () => Promise<void>;
-  refreshBadges: () => Promise<void>;
+  // Removed refreshBadges for MVP
   refreshNotifications: () => Promise<void>;
   refreshModerationQueue: () => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -149,8 +144,7 @@ interface AppStateContextType {
   addQuest: (quest: Quest) => void;
   updateQuest: (quest: Quest) => void;
   removeQuest: (questId: string) => void;
-  // Badge actions
-  addBadge: (badge: Badge) => void;
+  // Removed badge actions for MVP
   // Notification actions
   addNotification: (notification: Notification) => void;
   updateNotification: (notification: Notification) => void;
@@ -200,20 +194,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const refreshBadges = async () => {
-    try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      const response = await apiClient.getUserBadges();
-      if (response.success) {
-        dispatch({ type: 'SET_BADGES', payload: response.data });
-        dispatch({ type: 'SET_LAST_UPDATED', payload: new Date().toISOString() });
-      }
-    } catch (error: any) {
-      dispatch({ type: 'SET_ERROR', payload: error.message || 'Failed to refresh badges' });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  };
+  // Removed refreshBadges function for MVP
 
   const refreshNotifications = async () => {
     try {
@@ -251,7 +232,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       await Promise.all([
         refreshUser(),
         refreshQuests(),
-        refreshBadges(),
+        // Removed refreshBadges for MVP
         refreshNotifications(),
         refreshModerationQueue(),
       ]);
@@ -275,9 +256,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'REMOVE_QUEST', payload: questId });
   };
 
-  const addBadge = (badge: Badge) => {
-    dispatch({ type: 'ADD_BADGE', payload: badge });
-  };
+  // Removed addBadge function for MVP
 
   const addNotification = (notification: Notification) => {
     dispatch({ type: 'ADD_NOTIFICATION', payload: notification });
@@ -330,14 +309,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     dispatch,
     refreshUser,
     refreshQuests,
-    refreshBadges,
+    // Removed refreshBadges for MVP
     refreshNotifications,
     refreshModerationQueue,
     refreshAll,
     addQuest,
     updateQuest,
     removeQuest,
-    addBadge,
+    // Removed addBadge for MVP
     addNotification,
     updateNotification,
     removeNotification,

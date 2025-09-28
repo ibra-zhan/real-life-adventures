@@ -9,34 +9,18 @@ export const useGenerateQuest = () => {
 
   return useMutation({
     mutationFn: async (params: {
-      categoryId?: string;
-      difficulty?: 'EASY' | 'MEDIUM' | 'HARD' | 'EPIC';
+      mode: 'quick' | 'custom';
+      difficulty: 'easy' | 'medium' | 'hard' | 'epic';
+      category?: 'fitness' | 'learning';
       count?: number;
-      location?: {
-        latitude: number;
-        longitude: number;
-        city?: string;
-        country?: string;
-      };
-      weather?: {
-        temperature: number;
-        condition: string;
-        season: string;
-      };
-      timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night';
-      preferences?: {
-        interests?: string[];
-        preferredDifficulties?: ('EASY' | 'MEDIUM' | 'HARD' | 'EPIC')[];
-        preferredCategories?: string[];
-      };
     }) => {
       const response = await apiClient.generateQuest(params);
       if (!response.success) {
         throw new Error(response.error?.message || 'Failed to generate quest');
       }
-      
+
       // Transform the generated quest data
-      const questsData = response.data.quests || response.data;
+      const questsData = response.data;
       const quests = Array.isArray(questsData) ? questsData : [questsData];
       return transformQuests(quests);
     },

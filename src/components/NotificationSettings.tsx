@@ -20,7 +20,7 @@ import {
   useNotificationSettings, 
   useUpdateNotificationSettings 
 } from '@/hooks/useNotifications';
-import { NOTIFICATION_TYPE_ICONS, NOTIFICATION_TYPE_COLORS } from '@/types';
+// Removed notification constants for MVP
 import type { NotificationSettings, NotificationType } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -240,8 +240,8 @@ export function NotificationSettings() {
             {Object.entries(current.types || {}).map(([type, typeSettings]) => (
               <div key={type} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className={cn("text-lg", NOTIFICATION_TYPE_COLORS[type as NotificationType])}>
-                    {NOTIFICATION_TYPE_ICONS[type as NotificationType]}
+                  <span className="text-lg text-blue-500">
+                    🔔
                   </span>
                   <span className="font-medium capitalize">
                     {type.replace('_', ' ')}

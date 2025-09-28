@@ -19,6 +19,7 @@ interface AuthContextType {
   logoutAll: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearError: () => void;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

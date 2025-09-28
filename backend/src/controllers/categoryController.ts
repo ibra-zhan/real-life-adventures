@@ -248,7 +248,7 @@ export const deleteCategory = async (req: Request, res: Response) => {
     const activeQuests = await prisma.quest.count({
       where: {
         categoryId: id,
-        status: { in: ['AVAILABLE', 'ACTIVE'] },
+        status: { in: ['AVAILABLE', 'COMPLETED'] },
       }
     });
     

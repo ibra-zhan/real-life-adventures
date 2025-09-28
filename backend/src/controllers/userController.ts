@@ -10,28 +10,15 @@ const updateProfileSchema = z.object({
   firstName: z.string().min(1, 'First name cannot be empty').optional(),
   lastName: z.string().min(1, 'Last name cannot be empty').optional(),
   bio: z.string().max(500, 'Bio must be less than 500 characters').optional(),
-  location: z.string().max(100, 'Location must be less than 100 characters').optional(),
-  timezone: z.string().optional(),
   avatar: z.string().url('Avatar must be a valid URL').optional(),
 });
 
 const updatePreferencesSchema = z.object({
   emailNotifications: z.boolean().optional(),
   pushNotifications: z.boolean().optional(),
-  streakReminders: z.boolean().optional(),
-  newQuestNotifications: z.boolean().optional(),
-  challengeNotifications: z.boolean().optional(),
-  badgeNotifications: z.boolean().optional(),
-  socialNotifications: z.boolean().optional(),
   profileVisibility: z.enum(['public', 'friends', 'private']).optional(),
-  shareCompletions: z.boolean().optional(),
-  showLocation: z.boolean().optional(),
-  showStreak: z.boolean().optional(),
-  showBadges: z.boolean().optional(),
   preferredCategories: z.array(z.string()).optional(),
   preferredDifficulty: z.array(z.enum(['EASY', 'MEDIUM', 'HARD', 'EPIC'])).optional(),
-  timeAvailablePerDay: z.number().min(5).max(480).optional(), // 5 minutes to 8 hours
-  autoAcceptFriendRequests: z.boolean().optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -65,8 +52,6 @@ export const updateProfile = async (req: Request, res: Response) => {
         firstName: validatedData.firstName || null,
         lastName: validatedData.lastName || null,
         bio: validatedData.bio || null,
-        location: validatedData.location || null,
-        timezone: validatedData.timezone || null,
         avatar: validatedData.avatar || null,
         updatedAt: new Date(),
       },
@@ -78,13 +63,6 @@ export const updateProfile = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        timezone: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         role: true,
         isActive: true,
         emailVerified: true,
@@ -253,13 +231,6 @@ export const updateUsername = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        timezone: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         role: true,
         isActive: true,
         emailVerified: true,
@@ -301,9 +272,7 @@ export const deleteAccount = async (req: Request, res: Response) => {
         firstName: null,
         lastName: null,
         bio: null,
-        location: null,
         avatar: null,
-        deletedAt: new Date(),
         updatedAt: new Date(),
       }
     });
@@ -339,15 +308,10 @@ export const getUserStats = async (req: Request, res: Response) => {
     }
 
     // Get user stats
-    const [user, submissionCount, badgeCount, xpLogs] = await Promise.all([
+    const [user, submissionCount] = await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
         select: {
-          level: true,
-          xp: true,
-          totalPoints: true,
-          currentStreak: true,
-          longestStreak: true,
           createdAt: true,
         }
       }),
@@ -355,20 +319,6 @@ export const getUserStats = async (req: Request, res: Response) => {
         where: { 
           userId,
           status: 'APPROVED'
-        }
-      }),
-      prisma.userBadge.count({
-        where: { userId }
-      }),
-      prisma.xPLog.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        select: {
-          amount: true,
-          source: true,
-          description: true,
-          createdAt: true,
         }
       })
     ]);
@@ -378,15 +328,8 @@ export const getUserStats = async (req: Request, res: Response) => {
     }
 
     const stats = {
-      level: user.level,
-      xp: user.xp,
-      totalPoints: user.totalPoints,
-      currentStreak: user.currentStreak,
-      longestStreak: user.longestStreak,
       completedQuests: submissionCount,
-      badgesEarned: badgeCount,
       memberSince: user.createdAt,
-      recentXpGains: xpLogs,
     };
 
     const response: ApiResponse<typeof stats> = {
@@ -421,19 +364,10 @@ export const getPublicProfile = async (req: Request, res: Response) => {
         lastName: true,
         avatar: true,
         bio: true,
-        location: true,
-        level: true,
-        xp: true,
-        totalPoints: true,
-        currentStreak: true,
-        longestStreak: true,
         createdAt: true,
         preferences: {
           select: {
             profileVisibility: true,
-            showLocation: true,
-            showStreak: true,
-            showBadges: true,
           }
         }
       }
@@ -456,33 +390,21 @@ export const getPublicProfile = async (req: Request, res: Response) => {
       lastName: user.lastName,
       avatar: user.avatar,
       bio: user.bio,
-      location: user.preferences?.showLocation ? user.location : null,
-      level: user.level,
-      xp: user.xp,
-      totalPoints: user.totalPoints,
-      currentStreak: user.preferences?.showStreak ? user.currentStreak : null,
-      longestStreak: user.preferences?.showStreak ? user.longestStreak : null,
       memberSince: user.createdAt,
     };
 
     // Get additional public stats
-    const [submissionCount, badgeCount] = await Promise.all([
-      prisma.submission.count({
-        where: { 
-          userId: user.id,
-          status: 'APPROVED',
-          privacy: 'public'
-        }
-      }),
-      user.preferences?.showBadges ? prisma.userBadge.count({
-        where: { userId: user.id }
-      }) : 0
-    ]);
+    const submissionCount = await prisma.submission.count({
+      where: { 
+        userId: user.id,
+        status: 'APPROVED',
+        privacy: 'public'
+      }
+    });
 
     const profileWithStats = {
       ...publicProfile,
       completedQuests: submissionCount,
-      badgesEarned: user.preferences?.showBadges ? badgeCount : null,
     };
 
     const response: ApiResponse<typeof profileWithStats> = {

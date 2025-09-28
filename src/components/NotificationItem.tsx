@@ -13,12 +13,7 @@ import {
   useMarkNotificationRead, 
   useDeleteNotification 
 } from '@/hooks/useNotifications';
-import { 
-  NOTIFICATION_TYPE_ICONS, 
-  NOTIFICATION_TYPE_COLORS, 
-  NOTIFICATION_PRIORITY_COLORS,
-  NOTIFICATION_CHANNEL_ICONS 
-} from '@/types';
+// Removed notification constants for MVP
 import type { Notification } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -94,11 +89,8 @@ export function NotificationItem({
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           {/* Icon */}
-          <div className={cn(
-            "text-2xl",
-            NOTIFICATION_TYPE_COLORS[notification.type]
-          )}>
-            {NOTIFICATION_TYPE_ICONS[notification.type]}
+          <div className="text-2xl text-blue-500">
+            🔔
           </div>
 
           {/* Content */}
@@ -136,17 +128,14 @@ export function NotificationItem({
               
               <Badge 
                 variant="outline" 
-                className={cn(
-                  "text-xs",
-                  NOTIFICATION_PRIORITY_COLORS[notification.priority]
-                )}
+                className="text-xs text-blue-500"
               >
-                {notification.priority}
+                {notification.type}
               </Badge>
 
               <div className="flex items-center gap-1">
-                {NOTIFICATION_CHANNEL_ICONS[notification.channel]}
-                <span className="capitalize">{notification.channel}</span>
+                📱
+                <span className="capitalize">in-app</span>
               </div>
             </div>
 

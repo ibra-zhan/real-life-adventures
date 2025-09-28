@@ -4,11 +4,11 @@ import userRoutes from './users';
 import questRoutes from './quests';
 import categoryRoutes from './categories';
 import aiQuestRoutes from './ai-quests';
+import questProgressRoutes from './quest-progress';
 import mediaRoutes from './media';
 import submissionRoutes from './submissions';
 import notificationRoutes from './notifications';
 import moderationRoutes from './moderation';
-import gamificationRoutes from './gamification';
 
 const router = Router();
 
@@ -18,11 +18,11 @@ router.use('/users', userRoutes);
 router.use('/quests', questRoutes);
 router.use('/categories', categoryRoutes);
 router.use('/ai-quests', aiQuestRoutes);
+router.use('/quest-progress', questProgressRoutes);
 router.use('/media', mediaRoutes);
 router.use('/submissions', submissionRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/moderation', moderationRoutes);
-router.use('/gamification', gamificationRoutes);
 
 // API info endpoint
 router.get('/', (_req, res) => {
@@ -77,6 +77,15 @@ router.get('/', (_req, res) => {
                 getGenerationStats: 'GET /api/ai-quests/stats',
                 getPersonalizedSuggestions: 'GET /api/ai-quests/suggestions',
               },
+              'quest-progress': {
+                startQuest: 'POST /api/quest-progress/start',
+                submitQuest: 'POST /api/quest-progress/submit',
+                completeQuest: 'POST /api/quest-progress/:questId/complete',
+                getUserQuests: 'GET /api/quest-progress/user',
+                getUserStats: 'GET /api/quest-progress/user/stats',
+                getQuestProgress: 'GET /api/quest-progress/:questId',
+                abandonQuest: 'POST /api/quest-progress/:questId/abandon',
+              },
               media: {
                 getUploadConfig: 'GET /api/media/config/:category',
                 validateFile: 'POST /api/media/validate',
@@ -125,21 +134,6 @@ router.get('/', (_req, res) => {
                 getModerationStats: 'GET /api/moderation/stats (Admin)',
                 getModerationQueue: 'GET /api/moderation/queue (Admin)',
                 processModerationQueue: 'POST /api/moderation/queue/process (Admin)',
-              },
-              gamification: {
-                getGamificationHealth: 'GET /api/gamification/health',
-                getGamificationStats: 'GET /api/gamification/stats',
-                getUserLevel: 'GET /api/gamification/level',
-                getLevelProgress: 'GET /api/gamification/level/progress',
-                getLevelConfig: 'GET /api/gamification/level/:level',
-                getAllLevelConfigs: 'GET /api/gamification/levels',
-                getUserBadges: 'GET /api/gamification/badges/user',
-                getBadgeProgress: 'GET /api/gamification/badges/:badgeId/progress',
-                getAllBadges: 'GET /api/gamification/badges',
-                getBadgesByType: 'GET /api/gamification/badges/type/:type',
-                getBadgesByRarity: 'GET /api/gamification/badges/rarity/:rarity',
-                addXP: 'POST /api/gamification/xp (Admin)',
-                awardBadge: 'POST /api/gamification/badges/award (Admin)',
               },
               health: 'GET /health',
       }

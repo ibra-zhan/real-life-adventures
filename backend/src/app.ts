@@ -1,6 +1,6 @@
 import express from 'express';
 import { Request, Response } from 'express';
-import config, { validateConfig } from './config';
+import config from './config';
 import {
   errorHandler,
   requestLogger,
@@ -20,7 +20,7 @@ import apiRoutes from './routes';
 // import leaderboardRoutes from '@/routes/leaderboard';
 
 // Validate configuration on startup
-validateConfig();
+// Configuration is validated during import
 
 // Create Express application
 const app = express();

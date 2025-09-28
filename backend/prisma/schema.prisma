@@ -1,5 +1,5 @@
-// SideQuest Database Schema
-// This schema defines all the data models for the SideQuest gamification platform
+// Real Life Adventures MVP Database Schema
+// Simplified schema focusing on core features: AI quests, profiles, and basic functionality
 
 generator client {
   provider = "prisma-client-js"
@@ -13,7 +13,6 @@ datasource db {
 // Enums
 enum UserRole {
   USER
-  MODERATOR
   ADMIN
 }
 
@@ -27,17 +26,22 @@ enum QuestDifficulty {
 enum QuestStatus {
   DRAFT
   AVAILABLE
-  ACTIVE
   COMPLETED
-  EXPIRED
   ARCHIVED
+}
+
+enum UserQuestStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  ABANDONED
 }
 
 enum SubmissionStatus {
   PENDING
   APPROVED
   REJECTED
-  FLAGGED
 }
 
 enum SubmissionType {
@@ -47,40 +51,7 @@ enum SubmissionType {
   CHECKLIST
 }
 
-enum BadgeType {
-  STREAK
-  COMPLETION
-  SOCIAL
-  SPECIAL
-}
-
-enum BadgeRarity {
-  COMMON
-  RARE
-  EPIC
-  LEGENDARY
-}
-
-enum NotificationType {
-  STREAK_REMINDER
-  CHALLENGE_INVITE
-  BADGE_UNLOCKED
-  QUEST_AVAILABLE
-  FRIEND_REQUEST
-  COMMENT
-  LIKE
-  QUEST_APPROVED
-  QUEST_REJECTED
-}
-
-enum ChallengeStatus {
-  UPCOMING
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
-// User Management
+// User Management (Simplified)
 model User {
   id                String    @id @default(cuid())
   email             String    @unique
@@ -90,15 +61,6 @@ model User {
   firstName         String?
   lastName          String?
   bio               String?
-  location          String?
-  timezone          String?
-  
-  // Gamification
-  level             Int       @default(1)
-  xp                Int       @default(0)
-  totalPoints       Int       @default(0)
-  currentStreak     Int       @default(0)
-  longestStreak     Int       @default(0)
   
   // Account Status
   role              UserRole  @default(USER)
@@ -107,27 +69,27 @@ model User {
   emailVerificationToken String?
   passwordResetToken String?
   passwordResetExpires DateTime?
+
+  // Gamification
+  totalXP           Int       @default(0)
+  currentLevel      Int       @default(1)
+  questsCompleted   Int       @default(0)
+  currentStreak     Int       @default(0)
+  longestStreak     Int       @default(0)
+  lastActivityDate  DateTime?
   
   // Timestamps
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastActiveAt      DateTime  @default(now())
-  deletedAt         DateTime?
   
   // Relationships
   preferences       UserPreferences?
   sessions          UserSession[]
   questsCreated     Quest[]
   submissions       Submission[]
-  userBadges        UserBadge[]
-  challengesJoined  ChallengeParticipant[]
   notifications     Notification[]
-  friendsInitiated  Friendship[] @relation("FriendshipInitiator")
-  friendsReceived   Friendship[] @relation("FriendshipReceiver")
-  comments          Comment[]
-  likes             Like[]
-  reports           Report[]
-  xpLogs            XPLog[]
+  questProgress     UserQuestProgress[]
   
   @@map("users")
 }
@@ -137,27 +99,14 @@ model UserPreferences {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  // Notification Preferences
+  // Basic Preferences
   emailNotifications      Boolean @default(true)
   pushNotifications       Boolean @default(true)
-  streakReminders         Boolean @default(true)
-  newQuestNotifications   Boolean @default(true)
-  challengeNotifications  Boolean @default(true)
-  badgeNotifications      Boolean @default(true)
-  socialNotifications     Boolean @default(true)
-  
-  // Privacy Preferences
-  profileVisibility       String  @default("public") // public, friends, private
-  shareCompletions        Boolean @default(true)
-  showLocation            Boolean @default(false)
-  showStreak              Boolean @default(true)
-  showBadges              Boolean @default(true)
+  profileVisibility       String  @default("public") // public, private
   
   // Quest Preferences
   preferredCategories     Json     // JSON array of category names
   preferredDifficulty     Json     // JSON array of preferred difficulties
-  timeAvailablePerDay     Int      @default(30) // minutes per day
-  autoAcceptFriendRequests Boolean @default(false)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -179,7 +128,7 @@ model UserSession {
   @@map("user_sessions")
 }
 
-// Quest System
+// Quest System (Simplified)
 model QuestCategory {
   id          String @id @default(cuid())
   name        String @unique
@@ -210,16 +159,14 @@ model Quest {
   difficulty        QuestDifficulty
   tags              Json            // JSON array of tags
   
-  // Requirements & Rewards
+  // Requirements
   requirements      Json            // JSON array of requirement strings
-  points            Int
   estimatedTime     Int             // minutes
   submissionTypes   Json            // JSON array of submission types
   
   // Status & Metadata
   status            QuestStatus     @default(DRAFT)
   isFeatured        Boolean         @default(false)
-  isEpic            Boolean         @default(false)
   
   // Location Requirements
   locationRequired  Boolean         @default(false)
@@ -228,18 +175,13 @@ model Quest {
   
   // Social Settings
   allowSharing      Boolean         @default(true)
-  encourageSharing  Boolean         @default(false)
   
   // Media
   imageUrl          String?
-  videoUrl          String?
   
-  // Creation & Moderation
+  // Creation
   createdBy         String?         // User ID if user-generated
   creator           User?           @relation(fields: [createdBy], references: [id])
-  moderatedBy       String?         // Admin/Moderator ID
-  moderatedAt       DateTime?
-  rejectionReason   String?
   
   // Stats
   completionCount   Int             @default(0)
@@ -250,17 +192,48 @@ model Quest {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   publishedAt       DateTime?
-  expiresAt         DateTime?
   
   // Relationships
   submissions       Submission[]
-  challengeQuests   ChallengeQuest[]
-  badgeRequirements BadgeRequirement[]
-  
+  userProgress      UserQuestProgress[]
+
+  // Reward System
+  pointsReward      Int             @default(50)  // XP points for completion
+
   @@map("quests")
 }
 
-// Submission System
+// User Quest Progress Tracking
+model UserQuestProgress {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questId         String
+  quest           Quest           @relation(fields: [questId], references: [id], onDelete: Cascade)
+
+  status          UserQuestStatus @default(NOT_STARTED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  submittedAt     DateTime?
+  abandonedAt     DateTime?
+
+  // Progress tracking
+  currentStep     Int             @default(0)
+  totalSteps      Int             @default(1)
+  progressData    Json?           // Custom progress data
+
+  // Reward tracking
+  xpEarned        Int             @default(0)
+  bonusXP         Int             @default(0)
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([userId, questId])
+  @@map("user_quest_progress")
+}
+
+// Submission System (Simplified)
 model Submission {
   id              String           @id @default(cuid())
   questId         String
@@ -283,20 +256,12 @@ model Submission {
   address         String?
   
   // Privacy
-  privacy         String           @default("public") // public, friends, private
+  privacy         String           @default("public") // public, private
   
   // Moderation
   approvedBy      String?
   approvedAt      DateTime?
   rejectionReason String?
-  moderationFlags Json?            // JSON array of flag reasons
-  flaggedAt       DateTime?
-  flaggedBy       String?
-  
-  // Engagement
-  likes           Like[]
-  comments        Comment[]
-  reports         Report[]
   
   // Timestamps
   submittedAt     DateTime         @default(now())
@@ -305,261 +270,13 @@ model Submission {
   @@map("submissions")
 }
 
-// Gamification System
-model Badge {
-  id           String      @id @default(cuid())
-  name         String      @unique
-  description  String
-  icon         String
-  type         BadgeType
-  rarity       BadgeRarity
-  
-  // Requirements
-  requirements BadgeRequirement[]
-  
-  // Stats
-  unlockedCount Int        @default(0)
-  
-  // Status
-  isActive     Boolean     @default(true)
-  
-  // Timestamps
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  
-  // Relationships
-  userBadges   UserBadge[]
-  challengeRewards ChallengeReward[]
-  
-  @@map("badges")
-}
-
-model BadgeRequirement {
-  id           String @id @default(cuid())
-  badgeId      String
-  badge        Badge  @relation(fields: [badgeId], references: [id], onDelete: Cascade)
-  
-  // Requirement Type
-  type         String // quest_count, streak, category, points, level, social, special
-  value        Int
-  category     String? // For category-specific requirements
-  questId      String? // For quest-specific requirements
-  quest        Quest?  @relation(fields: [questId], references: [id])
-  
-  @@map("badge_requirements")
-}
-
-model UserBadge {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  badgeId     String
-  badge       Badge    @relation(fields: [badgeId], references: [id])
-  
-  unlockedAt  DateTime @default(now())
-  progress    Json?    // JSON object for tracking progress
-  
-  @@unique([userId, badgeId])
-  @@map("user_badges")
-}
-
-model XPLog {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  amount      Int
-  source      String   // quest_completion, streak_bonus, challenge_bonus, etc.
-  sourceId    String?  // ID of the quest, challenge, etc.
-  description String?
-  
-  createdAt   DateTime @default(now())
-  
-  @@map("xp_logs")
-}
-
-// Challenge System
-model Challenge {
-  id              String              @id @default(cuid())
-  title           String
-  description     String
-  theme           String
-  rules           String?
-  prizesDescription String?
-  
-  // Timing
-  startDate       DateTime
-  endDate         DateTime
-  status          ChallengeStatus     @default(UPCOMING)
-  
-  // Participation
-  maxParticipants Int?
-  currentParticipants Int           @default(0)
-  
-  // Media
-  imageUrl        String?
-  bannerUrl       String?
-  
-  // Creation
-  createdBy       String
-  
-  // Timestamps
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  
-  // Relationships
-  participants    ChallengeParticipant[]
-  quests          ChallengeQuest[]
-  rewards         ChallengeReward[]
-  leaderboard     ChallengeLeaderboard[]
-  
-  @@map("challenges")
-}
-
-model ChallengeParticipant {
-  id            String    @id @default(cuid())
-  challengeId   String
-  challenge     Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  joinedAt      DateTime  @default(now())
-  completedAt   DateTime?
-  score         Int       @default(0)
-  
-  @@unique([challengeId, userId])
-  @@map("challenge_participants")
-}
-
-model ChallengeQuest {
-  id            String    @id @default(cuid())
-  challengeId   String
-  challenge     Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  questId       String
-  quest         Quest     @relation(fields: [questId], references: [id])
-  
-  pointMultiplier Float   @default(1.0)
-  isRequired    Boolean   @default(false)
-  
-  @@unique([challengeId, questId])
-  @@map("challenge_quests")
-}
-
-model ChallengeReward {
-  id            String    @id @default(cuid())
-  challengeId   String
-  challenge     Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  badgeId       String
-  badge         Badge     @relation(fields: [badgeId], references: [id])
-  
-  requirement   String    // first_place, top_10, completion, etc.
-  
-  @@map("challenge_rewards")
-}
-
-model ChallengeLeaderboard {
-  id            String    @id @default(cuid())
-  challengeId   String
-  challenge     Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-  userId        String
-  
-  rank          Int
-  score         Int
-  completedQuests Int     @default(0)
-  
-  updatedAt     DateTime  @updatedAt
-  
-  @@unique([challengeId, userId])
-  @@map("challenge_leaderboard")
-}
-
-// Social Features
-model Friendship {
-  id          String   @id @default(cuid())
-  initiatorId String
-  initiator   User     @relation("FriendshipInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
-  receiverId  String
-  receiver    User     @relation("FriendshipReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
-  
-  status      String   @default("pending") // pending, accepted, blocked
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@unique([initiatorId, receiverId])
-  @@map("friendships")
-}
-
-model Comment {
-  id           String   @id @default(cuid())
-  submissionId String
-  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  content      String
-  parentId     String?  // For nested comments
-  parent       Comment? @relation("CommentReplies", fields: [parentId], references: [id])
-  replies      Comment[] @relation("CommentReplies")
-  
-  likes        Like[]
-  reports      Report[]
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  @@map("comments")
-}
-
-model Like {
-  id           String      @id @default(cuid())
-  userId       String
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Polymorphic relationship - can like submissions or comments
-  submissionId String?
-  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  commentId    String?
-  comment      Comment?    @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  
-  createdAt    DateTime    @default(now())
-  
-  @@unique([userId, submissionId])
-  @@unique([userId, commentId])
-  @@map("likes")
-}
-
-model Report {
-  id           String      @id @default(cuid())
-  reporterId   String
-  reporter     User        @relation(fields: [reporterId], references: [id], onDelete: Cascade)
-  
-  // Polymorphic relationship - can report submissions or comments
-  submissionId String?
-  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  commentId    String?
-  comment      Comment?    @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  
-  reason       String
-  description  String?
-  status       String      @default("pending") // pending, reviewed, resolved, dismissed
-  
-  reviewedBy   String?
-  reviewedAt   DateTime?
-  resolution   String?
-  
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  
-  @@map("reports")
-}
-
-// Notification System
+// Notification System (Simplified)
 model Notification {
   id          String           @id @default(cuid())
   userId      String
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  type        NotificationType
+  type        String           // quest_available, submission_approved, etc.
   title       String
   message     String
   actionUrl   String?
@@ -573,41 +290,3 @@ model Notification {
   
   @@map("notifications")
 }
-
-// Analytics & Logging
-model AnalyticsEvent {
-  id          String   @id @default(cuid())
-  userId      String?
-  
-  event       String   // quest_started, quest_completed, badge_unlocked, etc.
-  category    String   // engagement, gamification, social, etc.
-  properties  Json?    // JSON object with event properties
-  
-  sessionId   String?
-  deviceInfo  String?
-  ipAddress   String?
-  userAgent   String?
-  
-  createdAt   DateTime @default(now())
-  
-  @@map("analytics_events")
-}
-
-model SystemLog {
-  id        String   @id @default(cuid())
-  level     String   // error, warn, info, debug
-  message   String
-  category  String   // api, auth, database, etc.
-  metadata  Json?    // JSON object with additional context
-  
-  userId    String?
-  requestId String?
-  
-  createdAt DateTime @default(now())
-  
-  @@map("system_logs")
-}
-
-// Indexes for performance
-// These will be created automatically by Prisma based on the relations
-// Additional custom indexes can be added as needed
